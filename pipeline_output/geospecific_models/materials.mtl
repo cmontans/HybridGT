@@ -1,0 +1,9 @@
+newmtl MatFacade
+Kd 1.0 1.0 1.0
+illum 2
+map_Kd Gemini_Generated_Image_xyn490xyn490xyn4.png
+
+newmtl MatRoof
+Kd 1.0 1.0 1.0
+illum 1
+map_Kd roof.png
