@@ -1,4 +1,5 @@
 import geopandas as gpd
+import pandas as pd
 import argparse
 import os
 import sys
@@ -98,6 +99,55 @@ def merge_contiguous_polygons(input_path, output_path, buffer_dist=0.01):
     print(f"Removing buffer (-{buffer_dist}m)...")
     merged_gdf.geometry = merged_gdf.geometry.buffer(-buffer_dist)
     
+    # --- Attribute Preservation (Levels/Height) ---
+    print("Preserving building attributes (levels/height) using spatial join...")
+    
+    # 1. Detect level-related columns in original data
+    possible_cols = ['building:levels', 'building_levels', 'building_l', 'levels', 'L', 'height', 'ele', 'altitude']
+    detected_cols = [c for c in possible_cols if c in gdf.columns]
+    
+    if detected_cols:
+        # Give merged_gdf a unique index for grouping
+        merged_gdf['temp_idx'] = merged_gdf.index
+        
+        # Spatial join: Which original buildings fall into which merged footprint?
+        # Use simple geometry subset for join to avoid bloat
+        joined = gpd.sjoin(
+            merged_gdf[['geometry', 'temp_idx']], 
+            gdf[detected_cols + ['geometry']], 
+            how='left', 
+            predicate='intersects'
+        )
+        
+        # 2. Aggregate attributes by merged footprint (take max)
+        print(f"Aggregating {len(detected_cols)} columns from constituent buildings...")
+        agg_map = {}
+        for col in detected_cols:
+            # Ensure numeric for max()
+            joined[col] = pd.to_numeric(joined[col], errors='coerce')
+            agg_map[col] = 'max'
+            
+        attr_data = joined.groupby('temp_idx').agg(agg_map).reset_index()
+        
+        # 3. Join aggregated attributes back to merged_gdf
+        # Use pandas merge but ensure we keep it as a GeoDataFrame
+        merged_gdf = merged_gdf.merge(attr_data, on='temp_idx', how='left')
+        
+        # Cleanup
+        merged_gdf.drop(columns=['temp_idx'], inplace=True)
+        if 'index_right' in merged_gdf.columns:
+            merged_gdf.drop(columns=['index_right'], inplace=True)
+            
+        print(f"Attributes preserved. Columns: {merged_gdf.columns.tolist()}")
+    else:
+        print("No level/height columns found in input to preserve.")
+
+    # 4. Final Explosion (CRITICAL for Count Consistency)
+    # The negative buffer might have split complex polygons into multiple parts.
+    # We must explode them now so that 'Buildings After Merge' count is accurate.
+    print("Ensuring result is fully exploded (resolving MultiPolygons)...")
+    merged_gdf = merged_gdf.explode(index_parts=False)
+
     # Project back to original CRS if we changed it
     if original_crs and original_crs.is_geographic:
         merged_gdf = merged_gdf.to_crs(original_crs)

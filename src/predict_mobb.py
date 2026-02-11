@@ -135,14 +135,18 @@ def main():
     
     args = parser.parse_args()
     
-    # Check paths
-    if not os.path.exists(args.input_file):
-        print(f"Error: Input file not found: {args.input_file}")
-        return
-    
-    if not os.path.exists(args.model):
-        print(f"Error: Model file not found: {args.model}")
-        return
+    # Load Model
+    model = None
+    if not args.use_mobb:
+        if not os.path.exists(args.model):
+            print(f"Error: Model file not found at {args.model}")
+            return
+        print(f"Loading model from {args.model}...")
+        try:
+            model = joblib.load(args.model)
+        except Exception as e:
+            print(f"Error loading model: {e}")
+            return
 
     print(f"Loading data from {args.input_file}...")
     try:
@@ -186,21 +190,25 @@ def main():
     print("Extracting features...")
     X = extract_features(gdf_projected)
     
+    # Calculate MOBB Parameters for EVERY building (as requested for orientation)
+    print("Calculating MOBB parameters...")
+    mobb_results = gdf_projected.geometry.apply(get_mobb_params)
+    df_mobb = pd.DataFrame(mobb_results.tolist(), columns=['mobb_width', 'mobb_height', 'mobb_angle'])
+    
     # Predict or Calculate MOBB
     if args.use_mobb:
-        print("Calculating MOBB dimensions (overriding predictions)...")
-        mobb_results = gdf_projected.geometry.apply(get_mobb_params)
-        df_preds = pd.DataFrame(mobb_results.tolist(), columns=['pred_width', 'pred_height', 'pred_angle'])
-        # Add dummy sin/cos for safety if any script expects them
+        print("Using MOBB dimensions...")
+        df_preds = df_mobb.rename(columns={'mobb_width': 'pred_width', 'mobb_height': 'pred_height', 'mobb_angle': 'pred_angle'})
+        # Add sin/cos for safety
         df_preds['sin_2a'] = np.sin(2 * np.radians(df_preds['pred_angle']))
         df_preds['cos_2a'] = np.cos(2 * np.radians(df_preds['pred_angle']))
     else:
-        print("Predicting MOBB dimensions...")
+        print("Predicting MOBB dimensions (but using calculated orientation)...")
         # Expected output: width, height, sin_2a, cos_2a
         preds = model.predict(X)
         df_preds = pd.DataFrame(preds, columns=['pred_width', 'pred_height', 'sin_2a', 'cos_2a'])
-        # Reconstruct Angle
-        df_preds['pred_angle'] = np.degrees(0.5 * np.arctan2(df_preds['sin_2a'], df_preds['cos_2a']))
+        # Override predicted angle with ACTUAL calculated angle
+        df_preds['pred_angle'] = df_mobb['mobb_angle']
 
     # --- Impute Missing Attributes (Building Type & Levels) ---
     print("Imputing missing 'building' and 'building:levels'...")
@@ -246,12 +254,39 @@ def main():
         if gdf['building'].isna().all():
              gdf['building'] = 'yes'
 
-    # 2. Building Levels
-    if 'building:levels' not in gdf.columns:
-        gdf['building:levels'] = None
+    # 2. Building Levels Detection (Enhanced)
+    levels_col = 'building:levels'
+    possible_levels_cols = ['building:levels', 'building_levels', 'building_l', 'levels', 'L']
+    detected_col = None
+    for c in possible_levels_cols:
+        if c in gdf.columns:
+            detected_col = c
+            break
+            
+    if detected_col and detected_col != levels_col:
+        print(f"Found levels in column '{detected_col}'. Mapping to '{levels_col}'.")
+        gdf[levels_col] = gdf[detected_col]
         
+    if levels_col not in gdf.columns:
+        # Check for height as fallback
+        height_col = None
+        for c in ['height', 'ele', 'altitude']:
+            if c in gdf.columns:
+                height_col = c
+                break
+        
+        if height_col:
+            print(f"Found height in '{height_col}'. Estimating levels...")
+            try:
+                h_vals = pd.to_numeric(gdf[height_col], errors='coerce').fillna(3.5) # Default 3.5m if nan
+                gdf[levels_col] = np.maximum(1, np.round(h_vals / 3.5)).astype(int)
+            except:
+                gdf[levels_col] = None
+        else:
+            gdf[levels_col] = None
+            
     # Ensure column is object type
-    gdf['building:levels'] = gdf['building:levels'].astype('object')
+    gdf[levels_col] = gdf[levels_col].astype('object')
         
     # Helper to clean levels
     def clean_levels(val):

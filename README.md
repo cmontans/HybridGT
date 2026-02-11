@@ -18,15 +18,20 @@ HybridGT (Hybrid Geotypical/Geospecific) is a technical pipeline designed to tra
 The `src/run_pipeline.py` script orchestrates the following technical stages:
 
 ### Step 0.5: Polygon Merging (Preprocessing)
-Handles fragmented data by merging contiguous or overlapping polygons. It includes a hole-removal logic to clean up artifacts, ensuring each building is treated as a solid entity.
+Handles fragmented data by merging contiguous or overlapping polygons.
+- **Robustness**: Uses spatial joins to preserve attributes (like building levels and height) from the original data, taking the maximum value among merged parts.
+- **Topology**: Cleans small holes and ensures a solid manifold footprint.
+- **Count Consistency**: Ensures the final polygon count exactly matches the building units processed in later steps.
 
 ### Step 1: Dimension Estimation (Predict vs. MOBB)
 Calculates the width, height, and orientation of each building:
-- **Predict Mode**: Uses a Random Forest model to estimate dimensions from OSM metadata.
-- **MOBB Mode (`--use_mobb`)**: Calculates the Minimum Oriented Bounding Box of the geometry for maximum precision.
+- **Predict Mode**: Uses a Random Forest model to estimate dimensions from metadata.
+- **MOBB Mode (`--use_mobb`)**: Calculates the Minimum Oriented Bounding Box for precise dimensions.
+- **Orientation**: Regardless of mode, the final orientation is always calculated directly from the geometry to ensure perfect alignment.
+- **Level Imputation**: Automatically detects building levels from various column aliases or estimates them from height data.
 
 ### Step 2 & 3: Optimization & Clustering
-Analyzes the entire dataset to find repeating patterns. It groups similar buildings into clusters (e.g., small houses, medium warehouses, large towers) to reduce the number of unique 3D models required.
+Analyzes the entire dataset (Width, Height, Levels) to find repeating patterns. It groups similar buildings into clusters to reduce the number of unique 3D models required.
 
 ### Step 4: Hybrid Assignment
 Determines which buildings "fit" a geotypical prototype and which are too unique. 
@@ -35,7 +40,7 @@ Determines which buildings "fit" a geotypical prototype and which are too unique
 
 ### Step 5 & 6: 3D Model Generation
 - **Geotypical**: Creates one high-quality OBJ model per cluster.
-- **Geospecific**: Generates unique OBJ models for every "outlier" building, preserving its exact footprint.
+- **Geospecific**: Generates unique OBJ models for every "outlier" building using `trimesh` extrusion, preserving its exact footprint.
 - All models are automatically UV-mapped and textured.
 
 ### Step 7: Footprint Reconstruction
@@ -48,7 +53,7 @@ Generates a `geotypical_footprints.geojson` representing the optimized bounding 
 1.  **Python 3.10+**
 2.  **Dependencies**:
     ```bash
-    pip install geopandas shapely pandas trimesh scikit-learn matplotlib
+    pip install geopandas shapely pandas trimesh scikit-learn matplotlib scipy joblib tqdm
     ```
 3.  **Blender 4.0+** (for visualization and scene assembly).
 
@@ -73,10 +78,9 @@ python src/run_pipeline.py export.geojson models/mobb_rf.pkl ./output --merge --
 The pipeline results are best viewed in Blender using the provided automation script.
 
 ```bash
-blender -P src/import_all_blender.py -- ./output [max_geo] [max_spec]
+blender -P src/import_city_blender.py
 ```
-- Open Blender console to see progress.
-- The script automatically centers the scene and applies textures.
+*Note: Ensure you update the `CSV_PATH` and `MODELS_DIR` in `import_city_blender.py` before running.*
 
 ---
 
@@ -90,3 +94,4 @@ At the end of every run, the pipeline generates:
 ## 🛡 Robustness Features
 - **File Lock Handling**: The pipeline detects if files are open in GIS/Blender and provides clear instructions.
 - **Output Purging**: Every run cleans relevant sub-directories to prevent "ghost buildings" from previous executions.
+- **Attribute Preservation**: Spatial joins ensure level and height data are carried through the merging process.
