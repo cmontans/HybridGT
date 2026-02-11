@@ -57,13 +57,21 @@ def main():
         print("No buildings found in the input file.")
         return
         
-    # Check for levels in input
+    # Check for levels in input (Enhanced detection)
     levels_col = 'building:levels'
-    if levels_col not in gdf_buildings.columns and 'building_l' in gdf_buildings.columns:
-        levels_col = 'building_l'
+    possible_levels_cols = ['building:levels', 'building_levels', 'building_l', 'levels', 'L']
+    detected_col = None
+    for c in possible_levels_cols:
+        if c in gdf_buildings.columns:
+            detected_col = c
+            break
+            
+    if detected_col and detected_col != levels_col:
+        print(f"Found levels in column '{detected_col}'. Mapping to '{levels_col}'.")
+        gdf_buildings[levels_col] = gdf_buildings[detected_col]
         
     if has_levels and levels_col not in gdf_buildings.columns:
-        print(f"Warning: Clusters have levels but input file missing '{levels_col}'. Assuming 1.")
+        print(f"Warning: Clusters have levels but input file missing levels column. Assuming 1.")
         gdf_buildings[levels_col] = 1
 
     # 4. Assign Clusters
