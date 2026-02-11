@@ -5,6 +5,7 @@ import joblib
 import os
 import math
 import argparse
+import pyogrio
 from tqdm import tqdm
 from shapely.geometry import Point, Polygon
 from shapely.validation import make_valid
@@ -132,6 +133,7 @@ def main():
     parser.add_argument("output_file", help="Path to output point file (shp, json, geojson)")
     parser.add_argument("--model", default=os.path.join("models", "mobb_rf.pkl"), help="Path to trained model")
     parser.add_argument("--use_mobb", action="store_true", help="Calculate dimensions using MOBB instead of predicting")
+    parser.add_argument("--layer", help="Layer name to read from multi-layer files (e.g. GPKG)")
     
     args = parser.parse_args()
     
@@ -149,8 +151,30 @@ def main():
             return
 
     print(f"Loading data from {args.input_file}...")
+    
+    # Check for multi-layer GPKG
+    layer = args.layer
+    if args.input_file.lower().endswith(".gpkg"):
+        try:
+            layers = pyogrio.list_layers(args.input_file)
+            layer_names = layers[:, 0] if len(layers) > 0 else []
+            
+            if len(layer_names) > 1 and not layer:
+                print("\n" + "!"*60)
+                print(f"WARNING: Multiple layers detected in {os.path.basename(args.input_file)}:")
+                for ln in layer_names:
+                    print(f"  - {ln}")
+                print(f"No --layer specified. Using the first layer: '{layer_names[0]}'")
+                print("!"*60 + "\n")
+                layer = layer_names[0]
+            elif layer and layer not in layer_names:
+                print(f"Error: Layer '{layer}' not found in {args.input_file}. Available: {list(layer_names)}")
+                return
+        except Exception as e:
+            print(f"Warning: Could not list layers in {args.input_file}: {e}")
+
     try:
-        gdf = gpd.read_file(args.input_file)
+        gdf = gpd.read_file(args.input_file, layer=layer)
     except Exception as e:
         print(f"Error reading input file: {e}")
         return

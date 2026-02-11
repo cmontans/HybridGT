@@ -4,6 +4,7 @@ import subprocess
 import sys
 import shutil
 import time
+import pyogrio
 import pandas as pd
 import geopandas as gpd
 
@@ -61,6 +62,7 @@ def main():
     parser.add_argument("--max_dist", type=float, default=5.0, help="Maximum fit distance (units) for clustering. Buildings exceeding this become geospecific.")
     parser.add_argument("--use_mobb", action="store_true", help="Calculate dimensions using MOBB instead of predicting")
     parser.add_argument("--merge", action="store_true", help="Initial step to merge contiguous polygons")
+    parser.add_argument("--layer", help="Layer name to read from multi-layer files (e.g. GPKG)")
     
     args = parser.parse_args()
     
@@ -78,8 +80,30 @@ def main():
         sys.exit(1)
         
     print(f"Loading input footprints: {args.input_file}")
+    
+    # Check for multi-layer GPKG
+    layer = args.layer
+    if args.input_file.lower().endswith(".gpkg"):
+        try:
+            layers = pyogrio.list_layers(args.input_file)
+            layer_names = layers[:, 0] if len(layers) > 0 else []
+            
+            if len(layer_names) > 1 and not layer:
+                print("\n" + "!"*60)
+                print(f"WARNING: Multiple layers detected in {os.path.basename(args.input_file)}:")
+                for ln in layer_names:
+                    print(f"  - {ln}")
+                print(f"No --layer specified. Using the first layer: '{layer_names[0]}'")
+                print("!"*60 + "\n")
+                layer = layer_names[0]
+            elif layer and layer not in layer_names:
+                print(f"Error: Layer '{layer}' not found in {args.input_file}. Available: {list(layer_names)}")
+                sys.exit(1)
+        except Exception as e:
+            print(f"Warning: Could not list layers in {args.input_file}: {e}")
+
     try:
-        gdf_input = gpd.read_file(args.input_file)
+        gdf_input = gpd.read_file(args.input_file, layer=layer)
         kpis['input_count'] = len(gdf_input)
     except Exception as e:
         print(f"Error reading input: {e}")
@@ -113,6 +137,8 @@ def main():
         if 'pred_width' in gdf_check.columns:
             print("Input file appears to be existing predictions (found 'pred_width'). Skipping Step 1.")
             skip_predict = True
+            # For GPKG we might need to be careful with copy if it's multi-layer, 
+            # but usually the input_file to the pipeline is what we want.
             shutil.copy2(args.input_file, predictions_file)
     except Exception as e:
         print(f"Warning: Could not check input columns: {e}. assuming raw footprints.")
@@ -126,6 +152,9 @@ def main():
             args.input_file,
             merged_input_file
         ]
+        if args.layer:
+            cmd_merge.extend(["--layer", args.layer])
+            
         run_command(cmd_merge, "Step 0.5: Merge Contiguous Polygons")
         current_input = merged_input_file
         
@@ -150,6 +179,10 @@ def main():
     # ...
         if args.use_mobb:
             cmd_predict.append("--use_mobb")
+        if args.layer and not args.merge:
+            # If we merged, the input to predict is the merged GeoJSON (single layer).
+            # If we didn't merge, we need to pass the layer.
+            cmd_predict.extend(["--layer", args.layer])
         
         # Purge output before Step 1
         purge_outputs([predictions_file])

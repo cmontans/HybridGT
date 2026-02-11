@@ -1,6 +1,6 @@
 # HybridGT: 3D City Generation Pipeline
 
-HybridGT (Hybrid Geotypical/Geospecific) is a technical pipeline designed to transform 2D building footprints (GeoJSON/Shapefile) into optimized 3D city scenes. It balances performance and visual fidelity by using a **hybrid approach**: common buildings are represented by optimized geotypical prototypes (instanced), while unique or complex buildings are generated as unique geospecific models.
+HybridGT (Hybrid Geotypical/Geospecific) is a technical pipeline designed to transform 2D building footprints (GeoJSON/Shapefile/GeoPackage) into optimized 3D city scenes. It balances performance and visual fidelity by using a **hybrid approach**: common buildings are represented by optimized geotypical prototypes (instanced), while unique or complex buildings are generated as unique geospecific models.
 
 ---
 
@@ -68,6 +68,12 @@ Execute the main script from the project root. You must provide an input file, a
 ```bash
 python src/run_pipeline.py export.geojson models/mobb_rf.pkl ./output
 ```
+
+**GeoPackage with Layer Selection:**
+```bash
+python src/run_pipeline.py data.gpkg models/mobb_rf.pkl ./output --layer buildings_layer --merge
+```
+*Note: If a GeoPackage has multiple layers and no `--layer` is specified, the pipeline will list all available layers and default to the first one.*
 
 **High-Precision Run (Merging + MOBB):**
 ```bash
