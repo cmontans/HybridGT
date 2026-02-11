@@ -128,7 +128,7 @@ def extract_features(gdf):
 
 def main():
     parser = argparse.ArgumentParser(description="Predict MOBB parameters from building polygons (SHP/GeoJSON).")
-    parser.add_argument("input_file", help="Path to input polygon file (shp, json, geojson)")
+    parser.add_argument("input_file", help="Path to input polygon file (shp, json, geojson, gpkg)")
     parser.add_argument("output_file", help="Path to output point file (shp, json, geojson)")
     parser.add_argument("--model", default=os.path.join("models", "mobb_rf.pkl"), help="Path to trained model")
     parser.add_argument("--use_mobb", action="store_true", help="Calculate dimensions using MOBB instead of predicting")

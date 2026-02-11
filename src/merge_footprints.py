@@ -155,8 +155,16 @@ def merge_contiguous_polygons(input_path, output_path, buffer_dist=0.01):
     print(f"Final feature count: {len(merged_gdf)}")
     
     # Save to file
-    print(f"Saving merged footprints to {output_path}...")
-    merged_gdf.to_file(output_path, driver='GeoJSON')
+    # Determine driver based on extension
+    out_ext = os.path.splitext(output_path)[1].lower()
+    driver = "GeoJSON"
+    if out_ext == ".gpkg":
+        driver = "GPKG"
+    elif out_ext == ".shp":
+        driver = "ESRI Shapefile"
+
+    print(f"Saving merged footprints to {output_path} (Driver: {driver})...")
+    merged_gdf.to_file(output_path, driver=driver)
     print("Done.")
 
 def main():

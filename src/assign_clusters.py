@@ -226,13 +226,21 @@ def main():
                     print(f"Warning: Could not remove {args.geospecific_geojson}. It might be locked.")
 
             if len(geospecific_gdf) > 0:
-                print(f"Saving {len(geospecific_gdf)} geospecific footprints to {args.geospecific_geojson}...")
-                # Try saving. Using 'fiona' engine can sometimes be more robust to locks than 'pyogrio' on Windows.
+                # Determine driver based on extension
+                out_ext = os.path.splitext(args.geospecific_geojson)[1].lower()
+                driver = "GeoJSON"
+                if out_ext == ".gpkg":
+                    driver = "GPKG"
+                elif out_ext == ".shp":
+                    driver = "ESRI Shapefile"
+
+                print(f"Saving {len(geospecific_gdf)} geospecific footprints to {args.geospecific_geojson} (Driver: {driver})...")
+                # Try saving.
                 try:
-                    geospecific_gdf.to_file(args.geospecific_geojson, driver='GeoJSON')
+                    geospecific_gdf.to_file(args.geospecific_geojson, driver=driver)
                 except Exception as e:
                     print(f"Error saving with default engine: {e}. Trying 'fiona'...")
-                    geospecific_gdf.to_file(args.geospecific_geojson, driver='GeoJSON', engine='fiona')
+                    geospecific_gdf.to_file(args.geospecific_geojson, driver=driver, engine='fiona')
             else:
                 print("No geospecific buildings found.")
                 # Create empty file

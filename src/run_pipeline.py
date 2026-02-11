@@ -46,7 +46,7 @@ def run_command(cmd, description):
 def main():
     parser = argparse.ArgumentParser(description="Run the full MOBB pipeline: Predict -> Histograms -> Optimize -> Assign -> OBJ Models.")
     
-    parser.add_argument("input_file", help="Path to input building footprints (Shapefile or GeoJSON)")
+    parser.add_argument("input_file", help="Path to input building footprints (Shapefile, GeoJSON, or GeoPackage)")
     parser.add_argument("model_file", help="Path to trained Random Forest model (.pkl)")
     parser.add_argument("output_dir", help="Directory to store all outputs")
     
