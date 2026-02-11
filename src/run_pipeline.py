@@ -111,9 +111,14 @@ def main():
         # Read just a few rows to check columns
         gdf_check = gpd.read_file(args.input_file, rows=1)
         if 'pred_width' in gdf_check.columns:
-            print("Input file appears to be existing predictions (found 'pred_width'). Skipping Step 1.")
-            skip_predict = True
-            shutil.copy2(args.input_file, predictions_file)
+            if args.use_mobb:
+                # With --use_mobb we must always rerun Step 1 so that MOBB-calculated
+                # orientations and freshly-imputed levels replace any stale ML predictions.
+                print("Input has 'pred_width' but --use_mobb is set: Step 1 will run to recalculate MOBB angles.")
+            else:
+                print("Input file appears to be existing predictions (found 'pred_width'). Skipping Step 1.")
+                skip_predict = True
+                shutil.copy2(args.input_file, predictions_file)
     except Exception as e:
         print(f"Warning: Could not check input columns: {e}. assuming raw footprints.")
 

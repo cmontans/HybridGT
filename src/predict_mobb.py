@@ -140,10 +140,6 @@ def main():
         print(f"Error: Input file not found: {args.input_file}")
         return
     
-    if not os.path.exists(args.model):
-        print(f"Error: Model file not found: {args.model}")
-        return
-
     print(f"Loading data from {args.input_file}...")
     try:
         gdf = gpd.read_file(args.input_file)
@@ -196,6 +192,10 @@ def main():
         df_preds['cos_2a'] = np.cos(2 * np.radians(df_preds['pred_angle']))
     else:
         print("Predicting MOBB dimensions...")
+        if not os.path.exists(args.model):
+            print(f"Error: Model file not found: {args.model}")
+            return
+        model = joblib.load(args.model)
         # Expected output: width, height, sin_2a, cos_2a
         preds = model.predict(X)
         df_preds = pd.DataFrame(preds, columns=['pred_width', 'pred_height', 'sin_2a', 'cos_2a'])
