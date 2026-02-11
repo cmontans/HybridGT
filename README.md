@@ -80,6 +80,27 @@ python src/run_pipeline.py data.gpkg models/mobb_rf.pkl ./output --layer buildin
 python src/run_pipeline.py export.geojson models/mobb_rf.pkl ./output --merge --use_mobb --max_dist 10
 ```
 
+### 2. Run with Docker (Optional)
+For a consistent environment, you can run the pipeline using Docker.
+
+**Build the image:**
+```bash
+docker build -t hybridgt .
+```
+
+**Run with docker-compose (Recommended):**
+The `docker-compose.yml` is configured to mount the current directory and run a standard pipeline.
+```bash
+docker-compose run hybridgt
+```
+
+**Run with custom arguments:**
+You can override the default command by passing arguments:
+```bash
+docker run --rm -v ${PWD}:/app hybridgt your_data.geojson models/mobb_rf.pkl ./output --merge --use_mobb
+```
+*Note: Ensure your input data and models are within the mounted volume (default is the current directory).*
+
 ---
 
 ## 📊 Summary & Reporting

@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  hybridgt:
+    build: .
+    image: hybridgt:latest
+    volumes:
+      - .:/app
+    environment:
+      - PYTHONPATH=/app/src
+    # Default command example (can be overridden)
+    command: [ "export.geojson", "models/mobb_rf.pkl", "./pipeline_output_docker", "--merge" ]
