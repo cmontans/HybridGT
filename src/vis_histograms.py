@@ -6,7 +6,7 @@ import sys
 
 def main():
     parser = argparse.ArgumentParser(description="Plot histograms of predicted MOBB attributes.")
-    parser.add_argument("input_shp", help="Path to predicted point shapefile")
+    parser.add_argument("input_shp", help="Path to predicted point file (shp, geojson, gpkg)")
     parser.add_argument("output_img", help="Path to save histogram image (e.g., histograms.png)")
     
     args = parser.parse_args()

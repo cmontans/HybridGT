@@ -127,11 +127,12 @@ def extract_features(gdf):
     return features
 
 def main():
-    parser = argparse.ArgumentParser(description="Predict MOBB parameters from building polygons (SHP/GeoJSON).")
-    parser.add_argument("input_file", help="Path to input polygon file (shp, json, geojson)")
-    parser.add_argument("output_file", help="Path to output point file (shp, json, geojson)")
+    parser = argparse.ArgumentParser(description="Predict MOBB parameters from building polygons (SHP/GeoJSON/GPKG).")
+    parser.add_argument("input_file", help="Path to input polygon file (shp, json, geojson, gpkg)")
+    parser.add_argument("output_file", help="Path to output point file (shp, json, geojson, gpkg)")
     parser.add_argument("--model", default=os.path.join("models", "mobb_rf.pkl"), help="Path to trained model")
     parser.add_argument("--use_mobb", action="store_true", help="Calculate dimensions using MOBB instead of predicting")
+    parser.add_argument("--layer", default=None, help="Layer name for GeoPackage (.gpkg) input files")
     
     args = parser.parse_args()
     
@@ -146,7 +147,10 @@ def main():
 
     print(f"Loading data from {args.input_file}...")
     try:
-        gdf = gpd.read_file(args.input_file)
+        read_kwargs = {}
+        if args.layer:
+            read_kwargs['layer'] = args.layer
+        gdf = gpd.read_file(args.input_file, **read_kwargs)
     except Exception as e:
         print(f"Error reading input file: {e}")
         return
@@ -389,13 +393,14 @@ def main():
     # Save
     print(f"Saving to {args.output_file}...")
     
-    # Determine driver based on extension if needed, but gpd handles it well
-    # For .json/.geojson, driver is "GeoJSON"
+    # Determine driver based on extension
     out_ext = os.path.splitext(args.output_file)[1].lower()
     driver = None
     if out_ext in ['.json', '.geojson']:
         driver = "GeoJSON"
-        
+    elif out_ext == '.gpkg':
+        driver = "GPKG"
+
     out_gdf.to_file(args.output_file, driver=driver)
     print("Done.")
 

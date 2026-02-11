@@ -9,7 +9,7 @@ import os
 
 def main():
     parser = argparse.ArgumentParser(description="Optimize building clusters (Width/Height).")
-    parser.add_argument("input_shp", help="Path to predicted point shapefile")
+    parser.add_argument("input_shp", help="Path to predicted point file (shp, geojson, gpkg)")
     parser.add_argument("output_csv", help="Path to save cluster centers CSV")
     parser.add_argument("--n_clusters", type=int, default=100, help="Number of clusters (default: 100)")
     parser.add_argument("--plot", default="clusters.png", help="Path to save plot image")

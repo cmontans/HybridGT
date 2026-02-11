@@ -46,7 +46,7 @@ def run_command(cmd, description):
 def main():
     parser = argparse.ArgumentParser(description="Run the full MOBB pipeline: Predict -> Histograms -> Optimize -> Assign -> OBJ Models.")
     
-    parser.add_argument("input_file", help="Path to input building footprints (Shapefile or GeoJSON)")
+    parser.add_argument("input_file", help="Path to input building footprints (Shapefile, GeoJSON, or GeoPackage)")
     parser.add_argument("model_file", help="Path to trained Random Forest model (.pkl)")
     parser.add_argument("output_dir", help="Directory to store all outputs")
     
@@ -61,7 +61,8 @@ def main():
     parser.add_argument("--max_dist", type=float, default=5.0, help="Maximum fit distance (units) for clustering. Buildings exceeding this become geospecific.")
     parser.add_argument("--use_mobb", action="store_true", help="Calculate dimensions using MOBB instead of predicting")
     parser.add_argument("--merge", action="store_true", help="Initial step to merge contiguous polygons")
-    
+    parser.add_argument("--layer", default=None, help="Layer name for GeoPackage (.gpkg) input files")
+
     args = parser.parse_args()
     
     start_time_total = time.time()
@@ -77,9 +78,14 @@ def main():
         print(f"Error: Input file not found: {args.input_file}")
         sys.exit(1)
         
+    # Prepare read kwargs (layer for GeoPackage files)
+    read_kwargs = {}
+    if args.layer:
+        read_kwargs['layer'] = args.layer
+
     print(f"Loading input footprints: {args.input_file}")
     try:
-        gdf_input = gpd.read_file(args.input_file)
+        gdf_input = gpd.read_file(args.input_file, **read_kwargs)
         kpis['input_count'] = len(gdf_input)
     except Exception as e:
         print(f"Error reading input: {e}")
@@ -109,11 +115,14 @@ def main():
     skip_predict = False
     try:
         # Read just a few rows to check columns
-        gdf_check = gpd.read_file(args.input_file, rows=1)
+        gdf_check = gpd.read_file(args.input_file, rows=1, **read_kwargs)
         if 'pred_width' in gdf_check.columns:
             print("Input file appears to be existing predictions (found 'pred_width'). Skipping Step 1.")
             skip_predict = True
-            shutil.copy2(args.input_file, predictions_file)
+            # Re-save as GeoJSON to ensure consistent format for downstream steps
+            # (handles .gpkg or other non-GeoJSON inputs correctly)
+            gdf_full = gpd.read_file(args.input_file, **read_kwargs)
+            gdf_full.to_file(predictions_file, driver="GeoJSON")
     except Exception as e:
         print(f"Warning: Could not check input columns: {e}. assuming raw footprints.")
 
@@ -126,6 +135,8 @@ def main():
             args.input_file,
             merged_input_file
         ]
+        if args.layer:
+            cmd_merge.extend(["--layer", args.layer])
         run_command(cmd_merge, "Step 0.5: Merge Contiguous Polygons")
         current_input = merged_input_file
         
@@ -148,6 +159,9 @@ def main():
             "--model", args.model_file
         ]
     # ...
+        # Only pass --layer when reading the original input (not merged GeoJSON)
+        if args.layer and current_input == args.input_file:
+            cmd_predict.extend(["--layer", args.layer])
         if args.use_mobb:
             cmd_predict.append("--use_mobb")
         

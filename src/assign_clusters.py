@@ -7,7 +7,7 @@ from scipy.spatial import cKDTree
 
 def main():
     parser = argparse.ArgumentParser(description="Assign buildings to nearest cluster models.")
-    parser.add_argument("predictions_file", help="Path to predictions file (Shapefile or GeoJSON)")
+    parser.add_argument("predictions_file", help="Path to predictions file (Shapefile, GeoJSON, or GeoPackage)")
     parser.add_argument("clusters_csv", help="Path to clusters CSV")
     parser.add_argument("output_csv", help="Path to output CSV for Blender import")
     parser.add_argument("--geospecific_geojson", help="Path to save geospecific building footprints", default=None)

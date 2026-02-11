@@ -37,21 +37,32 @@ def remove_small_holes(geom, threshold_ratio=0.1):
             
     return Polygon(exterior, interiors)
 
-def merge_contiguous_polygons(input_path, output_path, buffer_dist=0.01):
+def merge_contiguous_polygons(input_path, output_path, buffer_dist=0.01, layer=None):
     """
-    Merges contiguous or overlapping polygons in a GeoJSON/Shapefile.
-    
+    Merges contiguous or overlapping polygons in a GeoJSON/Shapefile/GeoPackage.
+
     Args:
         input_path: Path to input building footprints.
         output_path: Path to save merged footprints.
         buffer_dist: Small buffer distance to ensure touching polygons intersect.
+        layer: Layer name for GeoPackage input files.
     """
     print(f"Loading footprints from {input_path}...")
-    gdf = gpd.read_file(input_path)
+    read_kwargs = {}
+    if layer:
+        read_kwargs['layer'] = layer
+    gdf = gpd.read_file(input_path, **read_kwargs)
     
+    # Determine output driver from extension
+    out_ext = os.path.splitext(output_path)[1].lower()
+    if out_ext == '.gpkg':
+        out_driver = 'GPKG'
+    else:
+        out_driver = 'GeoJSON'
+
     if len(gdf) == 0:
         print("Empty input file.")
-        gdf.to_file(output_path, driver='GeoJSON')
+        gdf.to_file(output_path, driver=out_driver)
         return
 
     print(f"Initial feature count: {len(gdf)}")
@@ -106,22 +117,23 @@ def merge_contiguous_polygons(input_path, output_path, buffer_dist=0.01):
     
     # Save to file
     print(f"Saving merged footprints to {output_path}...")
-    merged_gdf.to_file(output_path, driver='GeoJSON')
+    merged_gdf.to_file(output_path, driver=out_driver)
     print("Done.")
 
 def main():
     parser = argparse.ArgumentParser(description="Merge contiguous building footprints.")
-    parser.add_argument("input_file", help="Path to input polygon file")
+    parser.add_argument("input_file", help="Path to input polygon file (shp, geojson, gpkg)")
     parser.add_argument("output_file", help="Path to output merged file")
     parser.add_argument("--buffer", type=float, default=0.01, help="Buffer distance for merging (default: 0.01)")
-    
+    parser.add_argument("--layer", default=None, help="Layer name for GeoPackage (.gpkg) input files")
+
     args = parser.parse_args()
-    
+
     if not os.path.exists(args.input_file):
         print(f"Error: Input file not found: {args.input_file}")
         sys.exit(1)
-        
-    merge_contiguous_polygons(args.input_file, args.output_file, args.buffer)
+
+    merge_contiguous_polygons(args.input_file, args.output_file, args.buffer, layer=args.layer)
 
 if __name__ == "__main__":
     main()
