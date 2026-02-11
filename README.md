@@ -80,14 +80,6 @@ python src/run_pipeline.py data.gpkg models/mobb_rf.pkl ./output --layer buildin
 python src/run_pipeline.py export.geojson models/mobb_rf.pkl ./output --merge --use_mobb --max_dist 10
 ```
 
-### 2. Import into Blender
-The pipeline results are best viewed in Blender using the provided automation script.
-
-```bash
-blender -P src/import_city_blender.py
-```
-*Note: Ensure you update the `CSV_PATH` and `MODELS_DIR` in `import_city_blender.py` before running.*
-
 ---
 
 ## 📊 Summary & Reporting
