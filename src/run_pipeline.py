@@ -56,6 +56,7 @@ def main():
     default_texture = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "textures", "facade.png")
     parser.add_argument("--texture", default=default_texture, help="Path to facade texture image (default: textures/facade.png)")
     parser.add_argument("--roof_texture", default="textures/roof.png", help="Path to roof texture image (default: textures/roof.png)")
+    parser.add_argument("--emissive_texture", default="textures/emmissive.png", help="Path to emissive texture image (default: textures/emmissive.png)")
     parser.add_argument("--no-texture", action="store_true", help="Disable texture generation")
     parser.add_argument("--n_clusters", type=int, default=100, help="Number of clusters for optimization")
     parser.add_argument("--min_iou", type=float, default=0.0, help="Minimum IoU filter for clustering")
@@ -73,6 +74,7 @@ def main():
     if args.no_texture:
         args.texture = None
         args.roof_texture = None
+        args.emissive_texture = None
     
     # 0. Setup
     if not os.path.exists(args.input_file):
@@ -250,6 +252,8 @@ def main():
         cmd_create_obj.extend(["--texture", args.texture])
     if args.roof_texture:
         cmd_create_obj.extend(["--roof_texture", args.roof_texture])
+    if args.emissive_texture:
+        cmd_create_obj.extend(["--emissive_texture", args.emissive_texture])
         
     run_command(cmd_create_obj, "Step 5: Create Clustered OBJ Models")
     
@@ -271,6 +275,8 @@ def main():
             cmd_geo.extend(["--texture", args.texture])
         if args.roof_texture:
             cmd_geo.extend(["--roof_texture", args.roof_texture])
+        if args.emissive_texture:
+            cmd_geo.extend(["--emissive_texture", args.emissive_texture])
             
         run_command(cmd_geo, "Step 6: Create Geospecific Models")
     

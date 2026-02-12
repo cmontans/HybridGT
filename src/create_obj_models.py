@@ -3,7 +3,7 @@ import os
 import argparse
 import shutil
 
-def write_material_file(filename, texture_filename, roof_texture_filename=None):
+def write_material_file(filename, texture_filename, roof_texture_filename=None, emissive_texture_filename=None):
     """Writes the .mtl file."""
     with open(filename, 'w') as f:
         # Facade Material
@@ -12,7 +12,11 @@ def write_material_file(filename, texture_filename, roof_texture_filename=None):
         f.write("Ka 1.000000 1.000000 1.000000\n")
         f.write("Kd 1.000000 1.000000 1.000000\n")
         f.write("Ks 0.500000 0.500000 0.500000\n")
-        f.write("Ke 0.000000 0.000000 0.000000\n")
+        if emissive_texture_filename:
+            f.write("Ke 1.000000 1.000000 1.000000\n")
+            f.write(f"map_Ke {emissive_texture_filename}\n")
+        else:
+            f.write("Ke 0.000000 0.000000 0.000000\n")
         f.write("Ni 1.000000\n")
         f.write("d 1.000000\n")
         f.write("illum 2\n")
@@ -156,6 +160,7 @@ def main():
     parser.add_argument("output_dir", help="Directory to save OBJ files")
     parser.add_argument("--texture", help="Path to facade texture image")
     parser.add_argument("--roof_texture", help="Path to roof texture image")
+    parser.add_argument("--emissive_texture", help="Path to emissive texture image")
     
     args = parser.parse_args()
     
@@ -188,11 +193,22 @@ def main():
                 print(f"Copied roof texture to {dest_roof_tex_path}")
             else:
                 print(f"Warning: Roof texture not found at {args.roof_texture}")
+                
+        # Handle Emissive Texture
+        emissive_tex_basename = None
+        if args.emissive_texture:
+            if os.path.exists(args.emissive_texture):
+                emissive_tex_basename = os.path.basename(args.emissive_texture)
+                dest_emissive_tex_path = os.path.join(args.output_dir, emissive_tex_basename)
+                shutil.copy2(args.emissive_texture, dest_emissive_tex_path)
+                print(f"Copied emissive texture to {dest_emissive_tex_path}")
+            else:
+                print(f"Warning: Emissive texture not found at {args.emissive_texture}")
             
         # Create materials.mtl
         mtl_filename = "materials.mtl"
         mtl_path = os.path.join(args.output_dir, mtl_filename)
-        write_material_file(mtl_path, tex_basename, roof_tex_basename)
+        write_material_file(mtl_path, tex_basename, roof_tex_basename, emissive_tex_basename)
         print(f"Created material library at {mtl_path}")
     
     print(f"Loading clusters from {args.clusters_csv}...")

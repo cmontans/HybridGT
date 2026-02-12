@@ -128,6 +128,7 @@ def main():
     parser.add_argument("output_csv", help="Path to save instances CSV (for placement)")
     parser.add_argument("--texture", help="Path to facade texture image")
     parser.add_argument("--roof_texture", help="Path to roof texture image")
+    parser.add_argument("--emissive_texture", help="Path to emissive texture image")
     
     args = parser.parse_args()
     
@@ -151,10 +152,21 @@ def main():
         if args.roof_texture and os.path.exists(args.roof_texture):
             roof_tex_basename = os.path.basename(args.roof_texture)
             shutil.copy2(args.roof_texture, os.path.join(args.output_dir, roof_tex_basename))
+            
+        emissive_tex_basename = None
+        if args.emissive_texture and os.path.exists(args.emissive_texture):
+            emissive_tex_basename = os.path.basename(args.emissive_texture)
+            shutil.copy2(args.emissive_texture, os.path.join(args.output_dir, emissive_tex_basename))
         
         with open(mtl_path, 'w') as f:
             f.write("newmtl MatFacade\nKd 1.0 1.0 1.0\nillum 2\n")
+            if emissive_tex_basename:
+                f.write("Ke 1.0 1.0 1.0\n")
+                f.write(f"map_Ke {emissive_tex_basename}\n")
+            else:
+                f.write("Ke 0.0 0.0 0.0\n")
             f.write(f"map_Kd {tex_basename}\n\n")
+            
             f.write("newmtl MatRoof\nKd 1.0 1.0 1.0\nillum 1\n")
             if roof_tex_basename:
                 f.write(f"map_Kd {roof_tex_basename}\n")
