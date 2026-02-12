@@ -38,7 +38,7 @@ def write_box_obj(filename, width, height, building_height, mtl_filename=None):
     """
     Writes a simple box 3D model to an OBJ file.
     The box is centered on the XY plane and rests on Z=0.
-    UVs are scaled to maintain aspect ratio (1 unit vertically = building height).
+    UVs are scaled to match 10m x 10m real-world texture size.
     """
     
     # Half dimensions
@@ -80,11 +80,10 @@ def write_box_obj(filename, width, height, building_height, mtl_filename=None):
         f.write("\n")
         
         if mtl_filename:
-            # UV Scaling factors
-            # U_max = Face_Width / Building_Height
-            
-            u_front = width / building_height
-            u_side = height / building_height
+            # UV Scaling (10m x 10m texture size)
+            u_front = width / 10.0
+            u_side = height / 10.0
+            v_high = building_height / 10.0
             
             # Write UVs for each face
             
@@ -92,37 +91,35 @@ def write_box_obj(filename, width, height, building_height, mtl_filename=None):
             # Using v1-v2-v6-v5
             f.write(f"vt 0.0 0.0\n")       # 1
             f.write(f"vt {u_front:.4f} 0.0\n") # 2
-            f.write(f"vt {u_front:.4f} 1.0\n") # 3
-            f.write(f"vt 0.0 1.0\n")       # 4
+            f.write(f"vt {u_front:.4f} {v_high:.4f}\n") # 3
+            f.write(f"vt 0.0 {v_high:.4f}\n")       # 4
             
-            # --- Right Face (Depth) -X? No, Width is X.
-            # v2(hw,0,hh) to v3(hw,0,-hh) is -Z direction.
-            # So Right Face is +X face: v2-v3-v7-v6
+            # --- Right Face (Depth) ---
+            # v2-v3-v7-v6
             f.write(f"vt 0.0 0.0\n")       # 5
             f.write(f"vt {u_side:.4f} 0.0\n")  # 6
-            f.write(f"vt {u_side:.4f} 1.0\n")  # 7
-            f.write(f"vt 0.0 1.0\n")       # 8
+            f.write(f"vt {u_side:.4f} {v_high:.4f}\n")  # 7
+            f.write(f"vt 0.0 {v_high:.4f}\n")       # 8
             
             # --- Back Face (Width) -Z ---
             # v3-v4-v8-v7
             f.write(f"vt 0.0 0.0\n")       # 9
             f.write(f"vt {u_front:.4f} 0.0\n") # 10
-            f.write(f"vt {u_front:.4f} 1.0\n") # 11
-            f.write(f"vt 0.0 1.0\n")       # 12
+            f.write(f"vt {u_front:.4f} {v_high:.4f}\n") # 11
+            f.write(f"vt 0.0 {v_high:.4f}\n")       # 12
             
             # --- Left Face (Depth) -X ---
             # v4-v1-v5-v8
             f.write(f"vt 0.0 0.0\n")       # 13
             f.write(f"vt {u_side:.4f} 0.0\n")  # 14
-            f.write(f"vt {u_side:.4f} 1.0\n")  # 15
-            f.write(f"vt 0.0 1.0\n")       # 16
+            f.write(f"vt {u_side:.4f} {v_high:.4f}\n")  # 15
+            f.write(f"vt 0.0 {v_high:.4f}\n")       # 16
             
             # --- Top Face (Roof) ---
-            # UVs scaled by building_height to match facade texture density
             f.write(f"vt 0.0 0.0\n")       # 17
-            f.write(f"vt {width/building_height:.4f} 0.0\n") # 18
-            f.write(f"vt {width/building_height:.4f} {height/building_height:.4f}\n") # 19
-            f.write(f"vt 0.0 {height/building_height:.4f}\n") # 20
+            f.write(f"vt {width/10.0:.4f} 0.0\n") # 18
+            f.write(f"vt {width/10.0:.4f} {height/10.0:.4f}\n") # 19
+            f.write(f"vt 0.0 {height/10.0:.4f}\n") # 20
 
             f.write("usemtl MatFacade\n")
             

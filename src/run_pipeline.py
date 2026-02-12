@@ -53,8 +53,8 @@ def main():
     
     # Optional args passed to substeps
     # Default texture path relative to script directory
-    default_texture = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "textures", "Gemini_Generated_Image_xyn490xyn490xyn4.png")
-    parser.add_argument("--texture", default=default_texture, help="Path to facade texture image (default: textures/Gemini_Generated_Image_xyn490xyn490xyn4.png)")
+    default_texture = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "textures", "facade.png")
+    parser.add_argument("--texture", default=default_texture, help="Path to facade texture image (default: textures/facade.png)")
     parser.add_argument("--roof_texture", default="textures/roof.png", help="Path to roof texture image (default: textures/roof.png)")
     parser.add_argument("--no-texture", action="store_true", help="Disable texture generation")
     parser.add_argument("--n_clusters", type=int, default=100, help="Number of clusters for optimization")

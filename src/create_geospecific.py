@@ -10,8 +10,8 @@ from shapely.ops import triangulate
 def write_textured_obj(filename, polygon, height, mtl_filename=None):
     """
     Manually writes an OBJ for an extruded footprint with facade and roof textures.
-    - Sides (Facades): U = cumulative perimeter / height, V = actual height (0 to 1).
-    - Top (Roof): U = X, V = Y (meter-scale triangulation).
+    - Sides (Facades): U = cumulative perimeter / 10.0, V = actual height / 10.0.
+    - Top (Roof): U = X / 10.0, V = Y / 10.0 (10m x 10m scale).
     """
     if polygon.is_empty:
         return False
@@ -28,7 +28,6 @@ def write_textured_obj(filename, polygon, height, mtl_filename=None):
     n_base = len(coords)
     
     # Roof triangulation for the top face
-    # trimesh.creation.triangulate_polygon returns (vertices, faces) for a 2D polygon
     try:
         roof_v2, roof_faces = trimesh.creation.triangulate_polygon(polygon)
     except Exception as e:
@@ -42,8 +41,6 @@ def write_textured_obj(filename, polygon, height, mtl_filename=None):
         f.write("o Building\n")
 
         # --- Vertices & UVs for Sides ---
-        # We need a pair of vertices (bottom, top) for each exterior point
-        # to apply facade texture correctly with perimeter mapping.
         
         # 1. Write Side Vertices
         v_offset = 0
@@ -51,33 +48,32 @@ def write_textured_obj(filename, polygon, height, mtl_filename=None):
             f.write(f"v {x:.4f} {y:.4f} 0.0000\n")         # Bottom
             f.write(f"v {x:.4f} {y:.4f} {height:.4f}\n")   # Top
         
-        # 2. Write Side UVs
+        # 2. Write Side UVs (10m x 10m texture size)
         cum_dist = 0.0
+        v_high = height / 10.0
         for i in range(n_base):
             p1 = coords[i]
             p2 = coords[(i+1)%n_base]
             
-            # U = distance in meters / height (to maintain aspect ratio, assuming texture is 1x1m or repeated)
-            # Actually building_height is 1.0 in V, so U should be perimeter / height for 1:1
-            u = cum_dist / height
+            # U = distance in meters / 10.0
+            u = cum_dist / 10.0
             
-            f.write(f"vt {u:.4f} 0.0\n") # Bottom UV
-            f.write(f"vt {u:.4f} 1.0\n") # Top UV
+            f.write(f"vt {u:.4f} 0.0\n")      # Bottom UV
+            f.write(f"vt {u:.4f} {v_high:.4f}\n") # Top UV
             
             dist = np.sqrt((p2[0]-p1[0])**2 + (p2[1]-p1[1])**2)
             cum_dist += dist
 
         # Add the closing UV pair for the last segment
-        u_last = cum_dist / height
+        u_last = cum_dist / 10.0
         f.write(f"vt {u_last:.4f} 0.0\n")
-        f.write(f"vt {u_last:.4f} 1.0\n")
+        f.write(f"vt {u_last:.4f} {v_high:.4f}\n")
         
         # 3. Write Side Faces
         if mtl_filename:
             f.write("usemtl MatFacade\n")
         
         for i in range(n_base):
-            # Indices for v: (1, 2), (3, 4) ...
             v1 = i * 2 + 1
             v2 = i * 2 + 2
             v3 = ((i+1) % n_base) * 2 + 2
@@ -93,12 +89,9 @@ def write_textured_obj(filename, polygon, height, mtl_filename=None):
                 vt_bot_next = n_base * 2 + 1
                 vt_top_next = n_base * 2 + 2
             
-            # Face v/vt
             f.write(f"f {v1}/{vt1} {v2}/{vt2} {v3}/{vt_top_next} {v4}/{vt_bot_next}\n")
 
         # --- Vertices & UVs for Roof ---
-        # Note: Trimesh coordinates are Z-up, but we wrote sides with Z-up. 
-        # Triangulation gives (X, Y).
         
         roof_idx_start = n_base * 2 + 1
         roof_uv_start = n_base * 2 + 3 # +2 for the extra closing vt pair
@@ -107,16 +100,15 @@ def write_textured_obj(filename, polygon, height, mtl_filename=None):
         for vx, vy in roof_v2:
             f.write(f"v {vx:.4f} {vy:.4f} {height:.4f}\n")
             
-        # 5. Write Roof UVs (Normalized to building height to match facade density)
+        # 5. Write Roof UVs (10m x 10m scale)
         for vx, vy in roof_v2:
-            f.write(f"vt {vx/height:.4f} {vy/height:.4f}\n")
+            f.write(f"vt {vx/10.0:.4f} {vy/10.0:.4f}\n")
             
         # 6. Write Roof Faces
         if mtl_filename:
             f.write("usemtl MatRoof\n")
             
         for face in roof_faces:
-            # Shift indices
             v1_r = face[0] + roof_idx_start
             v2_r = face[1] + roof_idx_start
             v3_r = face[2] + roof_idx_start
@@ -125,7 +117,6 @@ def write_textured_obj(filename, polygon, height, mtl_filename=None):
             vt2_r = face[1] + roof_uv_start
             vt3_r = face[2] + roof_uv_start
             
-            # Counter-clockwise for Z-up
             f.write(f"f {v1_r}/{vt1_r} {v2_r}/{vt2_r} {v3_r}/{vt3_r}\n")
 
     return True
@@ -150,7 +141,6 @@ def main():
     mtl_filename = None
     if args.texture:
         import shutil
-        # Create materials matching clustered models
         mtl_filename = "materials.mtl"
         mtl_path = os.path.join(args.output_dir, mtl_filename)
         
@@ -162,8 +152,6 @@ def main():
             roof_tex_basename = os.path.basename(args.roof_texture)
             shutil.copy2(args.roof_texture, os.path.join(args.output_dir, roof_tex_basename))
         
-        # Import function from create_obj_models to keep mtl consistent? 
-        # No, let's just write it here to avoid dependency cycle or just keep it simple.
         with open(mtl_path, 'w') as f:
             f.write("newmtl MatFacade\nKd 1.0 1.0 1.0\nillum 2\n")
             f.write(f"map_Kd {tex_basename}\n\n")
@@ -203,21 +191,17 @@ def main():
             if geom is None or geom.is_empty:
                 continue
                 
-            # Centroid for placement
             centroid = geom.centroid
             cx, cy = centroid.x, centroid.y
             
-            # Shift polygon to (0,0) relative to centroid
             shifted_geom = shapely.affinity.translate(geom, xoff=-cx, yoff=-cy)
             
-            # Save Textured OBJ
             obj_name = f"geospecific_{idx}.obj"
             obj_path = os.path.join(args.output_dir, obj_name)
             
             success = write_textured_obj(obj_path, shifted_geom, height, mtl_filename)
             
             if not success:
-                # Fallback to simple extrude if custom writer fails
                 mesh = trimesh.creation.extrude_polygon(shifted_geom, height=height)
                 if mesh:
                     mesh.export(obj_path, file_type='obj')
@@ -225,18 +209,17 @@ def main():
                     count_fail += 1
                     continue
             
-            # Add to instances
             instances.append({
                 'x': cx,
                 'y': cy,
                 'z': 0,
-                'angle_deg': 0, # Already rotated in geometry, so 0 rotation for instance
+                'angle_deg': 0,
                 'obj_filename': obj_name,
-                'pred_width': 0, # Not relevant
+                'pred_width': 0,
                 'pred_height': 0,
                 'fit_dist': 0,
                 'pred_levels': levels,
-                'cluster_levels': levels # It IS the level
+                'cluster_levels': levels
             })
             
             count_success += 1
@@ -250,7 +233,6 @@ def main():
             
     print(f"Finished. Generated {count_success} models. Failed: {count_fail}")
     
-    # Always save the CSV, even if empty, to ensure we don't have stale data from previous runs
     df_out = pd.DataFrame(instances)
     df_out.to_csv(args.output_csv, index=False)
     print(f"Saved {len(instances)} instances placement to {args.output_csv}")

@@ -31,7 +31,7 @@ DEFAULT_MAX_GEOSPECIFIC = 200  # Limit for geospecific buildings (-1 = unlimited
 
 # Angle offset to fix orientation (OBJ model width is along X, predicted angle is from X-axis)
 # If buildings appear rotated 90° wrong, change this to 90 or -90
-DEFAULT_ANGLE_OFFSET = 90  # degrees
+DEFAULT_ANGLE_OFFSET = 0  # degrees
 
 # Collection Names
 CLUSTERED_COLLECTION = "Clustered_Buildings"
@@ -179,8 +179,8 @@ def import_clustered_buildings(output_dir, offset, proto_coll, city_coll, max_bu
         x = float(row['x']) - offset[0]
         y = float(row['y']) - offset[1]
         z = float(row['z']) - offset[2]
-        # Negate angle and add offset to fix coordinate system mismatch
-        angle_rad = math.radians(-float(row['angle_deg']) + angle_offset)
+        # Use angle directly (matches Blender's coordinate system and geospecific logic)
+        angle_rad = math.radians(float(row['angle_deg']) + angle_offset)
         
         # Create empty as collection instance
         empty = bpy.data.objects.new(f"bldg_{count}", None)

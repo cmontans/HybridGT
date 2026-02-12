@@ -7,7 +7,7 @@ Ke 0.000000 0.000000 0.000000
 Ni 1.000000
 d 1.000000
 illum 2
-map_Kd Gemini_Generated_Image_xyn490xyn490xyn4.png
+map_Kd facade.png
 
 newmtl MatRoof
 Ns 0.000000
