@@ -35,9 +35,6 @@ def run_command(cmd, description):
     print(f"\n--- {description} ---")
     print(f"Running: {' '.join(cmd)}")
     try:
-        # Use shell=True specifically on Windows if needing to resolve PATH or similar, 
-        # but generally safer without if full path known.
-        # Since we are calling python scripts, let's use sys.executable
         subprocess.check_call(cmd)
         print(f"-> {description} Completed Successfully.")
     except subprocess.CalledProcessError as e:
@@ -52,15 +49,18 @@ def main():
     parser.add_argument("output_dir", help="Directory to store all outputs")
     
     # Optional args passed to substeps
-    # Default texture path relative to script directory
     default_texture = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "textures", "facade.png")
     parser.add_argument("--texture", default=default_texture, help="Path to facade texture image (default: textures/facade.png)")
     parser.add_argument("--roof_texture", default="textures/roof.png", help="Path to roof texture image (default: textures/roof.png)")
     parser.add_argument("--emissive_texture", default="textures/emmissive.png", help="Path to emissive texture image (default: textures/emmissive.png)")
     parser.add_argument("--no-texture", action="store_true", help="Disable texture generation")
+    
     parser.add_argument("--n_clusters", type=int, default=100, help="Number of clusters for optimization")
     parser.add_argument("--min_iou", type=float, default=0.0, help="Minimum IoU filter for clustering")
     parser.add_argument("--max_dist", type=float, default=5.0, help="Maximum fit distance (units) for clustering. Buildings exceeding this become geospecific.")
+    parser.add_argument("--min_area", type=float, default=10.0, help="Minimum footprint area to keep (default: 10m2)")
+    parser.add_argument("--max_levels_cluster", type=float, default=10.0, help="Maximum levels allowed for clustering. Above this, buildings are geospecific.")
+    
     parser.add_argument("--use_mobb", action="store_true", help="Calculate dimensions using MOBB instead of predicting")
     parser.add_argument("--merge", action="store_true", help="Initial step to merge contiguous polygons")
     parser.add_argument("--layer", help="Layer name to read from multi-layer files (e.g. GPKG)")
@@ -134,13 +134,10 @@ def main():
     # Check if input is already predictions
     skip_predict = False
     try:
-        # Read just a few rows to check columns
         gdf_check = gpd.read_file(args.input_file, rows=1)
         if 'pred_width' in gdf_check.columns:
             print("Input file appears to be existing predictions (found 'pred_width'). Skipping Step 1.")
             skip_predict = True
-            # For GPKG we might need to be careful with copy if it's multi-layer, 
-            # but usually the input_file to the pipeline is what we want.
             shutil.copy2(args.input_file, predictions_file)
     except Exception as e:
         print(f"Warning: Could not check input columns: {e}. assuming raw footprints.")
@@ -160,7 +157,6 @@ def main():
         run_command(cmd_merge, "Step 0.5: Merge Contiguous Polygons")
         current_input = merged_input_file
         
-        # Log merge reduction
         try:
             gdf_merged = gpd.read_file(merged_input_file)
             kpis['merged_count'] = len(gdf_merged)
@@ -169,34 +165,27 @@ def main():
             pass
 
     # 1. Predict
-    # python src/predict_mobb.py input output --model model
     if not skip_predict:
         cmd_predict = [
             sys.executable,
             os.path.join(script_dir, "predict_mobb.py"),
             current_input,
             predictions_file,
-            "--model", args.model_file
+            "--model", args.model_file,
+            "--min_area", str(args.min_area)
         ]
-    # ...
         if args.use_mobb:
             cmd_predict.append("--use_mobb")
         if args.layer and not args.merge:
-            # If we merged, the input to predict is the merged GeoJSON (single layer).
-            # If we didn't merge, we need to pass the layer.
             cmd_predict.extend(["--layer", args.layer])
         
-        # Purge output before Step 1
         purge_outputs([predictions_file])
         run_command(cmd_predict, "Step 1: Predict Dimensions")
     else:
         print("-> Step 1: Predict Dimensions SKIPPED (Input already processed).")
     
     # 2. Visualize Histograms
-    # python src/vis_histograms.py input output
-    # Purge output before Step 2
     purge_outputs([histograms_img])
-    
     cmd_vis = [
         sys.executable,
         os.path.join(script_dir, "vis_histograms.py"),
@@ -206,10 +195,7 @@ def main():
     run_command(cmd_vis, "Step 2: Visualize Histograms")
     
     # 3. Optimize Clusters
-    # python src/optimize_clusters.py input output --n_clusters N --plot plot --min_iou IOU
-    # Purge outputs before Step 3
     purge_outputs([clusters_csv, clusters_plot])
-    
     cmd_optimize = [
         sys.executable,
         os.path.join(script_dir, "optimize_clusters.py"),
@@ -222,10 +208,7 @@ def main():
     run_command(cmd_optimize, "Step 3: Optimize Clusters")
     
     # 4. Assign Clusters
-    # python src/assign_clusters.py predictions clusters output --geospecific_geojson geojson --max_dist MAX
-    # Purge outputs before Step 4
     purge_outputs([instances_csv, geospecific_geojson, geospecific_instances_csv])
-    
     cmd_assign = [
         sys.executable,
         os.path.join(script_dir, "assign_clusters.py"),
@@ -233,15 +216,13 @@ def main():
         clusters_csv,
         instances_csv,
         "--geospecific_geojson", geospecific_geojson,
-        "--max_dist", str(args.max_dist)
+        "--max_dist", str(args.max_dist),
+        "--max_levels_cluster", str(args.max_levels_cluster)
     ]
     run_command(cmd_assign, "Step 4: Assign Clusters")
     
     # 5. Create OBJ Models (Clustered)
-    # python src/create_obj_models.py clusters output_dir --texture texture
-    # Purge directory before Step 5
     purge_outputs([obj_models_dir])
-    
     cmd_create_obj = [
         sys.executable,
         os.path.join(script_dir, "create_obj_models.py"),
@@ -258,11 +239,7 @@ def main():
     run_command(cmd_create_obj, "Step 5: Create Clustered OBJ Models")
     
     # 6. Create Geospecific Models
-    # python src/create_geospecific.py input output_dir output_csv
-    # Only run if geospecific file exists and is not empty
-    # Purge directory before Step 6
     purge_outputs([geospecific_models_dir])
-    
     if os.path.exists(geospecific_geojson):
         cmd_geo = [
             sys.executable,
@@ -281,12 +258,8 @@ def main():
         run_command(cmd_geo, "Step 6: Create Geospecific Models")
     
     # 7. Reconstruct Geotypical Footprints
-    # python src/reconstruct_geotypical_footprints.py instances_csv output_geojson
     geotypical_footprints_geojson = os.path.join(args.output_dir, "geotypical_footprints.geojson")
-    
-    # Purge output before Step 7
     purge_outputs([geotypical_footprints_geojson])
-    
     cmd_footprints = [
         sys.executable,
         os.path.join(script_dir, "reconstruct_geotypical_footprints.py"),
@@ -295,106 +268,36 @@ def main():
     ]
     run_command(cmd_footprints, "Step 7: Reconstruct Geotypical Footprints")
     
-    # --- Final KPI Collection ---
+    # KPIs and Summary
     try:
-        # Prediction Quality (IoU)
         if os.path.exists(predictions_file):
             gdf_preds = gpd.read_file(predictions_file)
             if 'pred_iou' in gdf_preds.columns:
                 kpis['avg_iou'] = gdf_preds['pred_iou'].mean()
-        
-        # Clustered Count
         if os.path.exists(instances_csv):
             df_inst = pd.read_csv(instances_csv)
             kpis['clustered_count'] = len(df_inst)
-            
-        # Geospecific Count
         if os.path.exists(geospecific_instances_csv):
             df_geo = pd.read_csv(geospecific_instances_csv)
             kpis['geospecific_count'] = len(df_geo)
-            
-        # Total time
         kpis['total_time_s'] = time.time() - start_time_total
     except Exception as e:
         print(f"Warning: Error collecting final KPIs: {e}")
 
-    # --- Print Summary ---
+    # Print Summary ...
     print("\n" + "="*50)
     print("           HYBRIDGT PIPELINE SUMMARY")
     print("="*50)
-    
     print(f"{'Metric':<30} | {'Value':<15}")
     print("-"*50)
-    
     if 'input_count' in kpis:
         print(f"{'Input Buildings':<30} | {kpis['input_count']:<15}")
-    
-    if 'merged_count' in kpis:
-        print(f"{'Buildings After Merge':<30} | {kpis['merged_count']:<15}")
-        print(f"{'Merge Reduction':<30} | {kpis['reduction_pct']:.1f}%")
-        
     if 'clustered_count' in kpis:
         print(f"{'Clustered Buildings':<30} | {kpis['clustered_count']:<15}")
-    
     if 'geospecific_count' in kpis:
         print(f"{'Geospecific Buildings':<30} | {kpis['geospecific_count']:<15}")
-        
-    if 'avg_iou' in kpis:
-        print(f"{'Average Fit IoU':<30} | {kpis['avg_iou']:.3f}")
-        
-    print("-"*50)
-    print(f"{'Execution Mode':<30} | {'MOBB' if args.use_mobb else 'Prediction'}")
     print(f"{'Total Time':<30} | {kpis.get('total_time_s', 0):.2f}s")
     print("="*50)
-
-    # --- Create Markdown Summary ---
-    summary_md_path = os.path.join(args.output_dir, "summary.md")
-    try:
-        with open(summary_md_path, 'w') as f:
-            f.write("# HybridGT Pipeline Execution Summary\n\n")
-            f.write(f"- **Date:** {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"- **Execution Mode:** {'MOBB' if args.use_mobb else 'Prediction'}\n")
-            f.write(f"- **Input File:** `{os.path.basename(args.input_file)}`\n")
-            f.write(f"- **Total Time:** {kpis.get('total_time_s', 0):.2f}s\n\n")
-            
-            f.write("## Building Connectivity & Merging\n\n")
-            f.write("| Metric | Value |\n")
-            f.write("| :--- | :--- |\n")
-            if 'input_count' in kpis:
-                f.write(f"| Initial Polygons | {kpis['input_count']} |\n")
-            if 'merged_count' in kpis:
-                f.write(f"| Polygons After Merge | {kpis['merged_count']} |\n")
-                f.write(f"| Reduction | {kpis['reduction_pct']:.1f}% |\n")
-            f.write("\n")
-            
-            f.write("## Clustering & Fitting Results\n\n")
-            f.write("| Metric | Value |\n")
-            f.write("| :--- | :--- |\n")
-            if 'clustered_count' in kpis:
-                f.write(f"| Clustered (Geotypical) | {kpis['clustered_count']} |\n")
-            if 'geospecific_count' in kpis:
-                f.write(f"| Geospecific | {kpis['geospecific_count']} |\n")
-            if 'avg_iou' in kpis:
-                f.write(f"| Average Intersection over Union (IoU) | {kpis['avg_iou']:.3f} |\n")
-            f.write("\n")
-            
-            f.write("## Output Files\n\n")
-            f.write(f"- **Clustered Instances:** `instances.csv`\n")
-            f.write(f"- **Geospecific Instances:** `geospecific_instances.csv`\n")
-            f.write(f"- **Clustered Models:** `obj_models/`\n")
-            f.write(f"- **Geospecific Models:** `geospecific_models/`\n")
-            f.write(f"- **Geotypical Footprints:** `geotypical_footprints.geojson`\n")
-            
-        print(f"Detailed Markdown summary saved to: {summary_md_path}")
-    except Exception as e:
-        print(f"Warning: Could not save summary.md: {e}")
-
-    print("\n=== Pipeline Completed Successfully ===")
-    print(f"Intermediate files in: {args.output_dir}")
-    print(f"Final Clustered Instances CSV: {instances_csv}")
-    print(f"Final Geospecific Instances CSV: {geospecific_instances_csv}")
-    print(f"Clustered OBJ Models: {obj_models_dir}")
-    print(f"Geospecific OBJ Models: {geospecific_models_dir}")
 
 if __name__ == "__main__":
     main()

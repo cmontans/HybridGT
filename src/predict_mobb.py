@@ -134,6 +134,7 @@ def main():
     parser.add_argument("--model", default=os.path.join("models", "mobb_rf.pkl"), help="Path to trained model")
     parser.add_argument("--use_mobb", action="store_true", help="Calculate dimensions using MOBB instead of predicting")
     parser.add_argument("--layer", help="Layer name to read from multi-layer files (e.g. GPKG)")
+    parser.add_argument("--min_area", type=float, default=10.0, help="Minimum footprint area to keep (default: 10m2)")
     
     args = parser.parse_args()
     
@@ -210,6 +211,22 @@ def main():
         
     gdf_projected = gdf.to_crs(target_crs)
     
+    # --- Area Filter (New) ---
+    print(f"Applying area filter: min_area = {args.min_area}m2")
+    before_count = len(gdf_projected)
+    gdf_projected = gdf_projected[gdf_projected.geometry.area >= args.min_area].copy()
+    # We also need to filter the original 'gdf' to keep indices in sync if we rely on them.
+    # Actually 'gdf' is only used to pull back 'building' and 'building:levels'.
+    # Let's just update 'gdf' as well or just use gdf_projected for everything.
+    gdf = gdf.loc[gdf_projected.index] # Sync original metadata
+    after_count = len(gdf_projected)
+    print(f"Discarded {before_count - after_count} buildings with area < {args.min_area}m2.")
+    print(f"Final count: {after_count} features.")
+
+    if len(gdf_projected) == 0:
+        print("Error: No buildings remaining after area filter.")
+        return
+
     # Feature Extraction
     print("Extracting features...")
     X = extract_features(gdf_projected)
@@ -244,9 +261,6 @@ def main():
     # Ensure column is object type to allow updates
     gdf['building'] = gdf['building'].astype('object')
         
-    # Filter for valid training data (exclude 'yes' to learn specific types if possible)
-    # We treat 'yes' as generic, but if we don't have enough specific types, we might need to include it.
-    # Let's try to train on specific types first.
     valid_types = gdf[gdf['building'].notna() & (gdf['building'] != 'yes') & (gdf['building'] != '')]
     if len(valid_types) > 50:
         print(f"Training building type classifier on {len(valid_types)} specific samples...")
@@ -254,27 +268,22 @@ def main():
         from sklearn.preprocessing import LabelEncoder
         
         le = LabelEncoder()
-        # Convert to string to ensure consistency
         y_type_train = le.fit_transform(valid_types['building'].astype(str))
         X_type_train = X.loc[valid_types.index]
         
         clf_type = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
         clf_type.fit(X_type_train, y_type_train)
         
-        # Predict for missing values (NaN or empty)
         missing_type_mask = gdf['building'].isna() | (gdf['building'] == '')
         if missing_type_mask.any():
             X_type_missing = X.loc[missing_type_mask]
             pred_types = clf_type.predict(X_type_missing)
             
-            # Inverse transform returns original labels (strings).
-            # Convert to list or numpy array of objects to avoid pandas complaints if dtype is picky
             pred_labels = le.inverse_transform(pred_types)
             gdf.loc[missing_type_mask, 'building'] = pred_labels
             print(f"Imputed {missing_type_mask.sum()} missing building types.")
     else:
         print("Not enough specific building type data to train classifier. Skipping type imputation.")
-        # If completely missing, default to 'yes'
         if gdf['building'].isna().all():
              gdf['building'] = 'yes'
 
@@ -292,7 +301,6 @@ def main():
         gdf[levels_col] = gdf[detected_col]
         
     if levels_col not in gdf.columns:
-        # Check for height as fallback
         height_col = None
         for c in ['height', 'ele', 'altitude']:
             if c in gdf.columns:
@@ -302,27 +310,22 @@ def main():
         if height_col:
             print(f"Found height in '{height_col}'. Estimating levels...")
             try:
-                h_vals = pd.to_numeric(gdf[height_col], errors='coerce').fillna(3.5) # Default 3.5m if nan
+                h_vals = pd.to_numeric(gdf[height_col], errors='coerce').fillna(3.5)
                 gdf[levels_col] = np.maximum(1, np.round(h_vals / 3.5)).astype(int)
             except:
                 gdf[levels_col] = None
         else:
             gdf[levels_col] = None
             
-    # Ensure column is object type
     gdf[levels_col] = gdf[levels_col].astype('object')
         
-    # Helper to clean levels
     def clean_levels(val):
         if pd.isna(val) or val == '':
             return np.nan
         try:
-            # Handle float directly
             if isinstance(val, (int, float)):
                 return float(val)
-            # Handle strings like "3", "3.5"
             val_str = str(val).replace(',', '.')
-            # Handle ranges "3-5" -> mean? max? let's take mean.
             if '-' in val_str:
                 parts = val_str.split('-')
                 return (float(parts[0]) + float(parts[1])) / 2
@@ -343,39 +346,22 @@ def main():
         reg_levels = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
         reg_levels.fit(X_levels_train, y_levels_train)
         
-        # Predict for missing
         missing_levels_mask = gdf['levels_clean'].isna()
         if missing_levels_mask.any():
             X_levels_missing = X.loc[missing_levels_mask]
             pred_levels = reg_levels.predict(X_levels_missing)
-            # Round to nearest int, ensure at least 1
             pred_levels = np.maximum(1, np.round(pred_levels)).astype(int)
-            # Convert to string or int, assign back to original column
-            # If original column has strings mixed with ints, better safe than sorry: cast to int then string?
-            # Or just int? Since we cast to object, int is fine.
             gdf.loc[missing_levels_mask, 'building:levels'] = pred_levels
             print(f"Imputed {missing_levels_mask.sum()} missing building levels.")
     else:
         print("Not enough levels data to train regressor. Defaulting to 1.")
         gdf.loc[gdf['building:levels'].isna(), 'building:levels'] = 1
         
-    # Drop temporary column
     if 'levels_clean' in gdf.columns:
         gdf.drop(columns=['levels_clean'], inplace=True)
 
-    # ---------------------------------------------------------
-    
-    # Process predictions (Width, Height, Angle)
-    # Already processed above
-    
-    # Create Output GeoDataFrame
-    # We want Point features (Centroids)
-    # Use the projected centroids so they are in meters, then maybe project back?
-    # Usually output should match input CRS or requested CRS. 
-    # Let's keep output in the projected CRS (UTM) as the units (width/height) are in meters.
-    # OR project back to original WGS84 but keep attributes in meters.
-    # Let's output in UTM to be consistent with the metric attributes.
-    
+    # Calculate IoU
+    print("Calculating Fitting Percentage (IoU)...")
     from shapely.geometry import Polygon
     from shapely.affinity import rotate, translate
 
@@ -391,34 +377,18 @@ def main():
         box = translate(box, cx, cy)
         return box
 
-    # Calculate IoU
-    print("Calculating Fitting Percentage (IoU)...")
     ious = []
     
-    # Iterate through predictions
-    # gdf_projected matches df_preds in index and length
     for idx, row in tqdm(df_preds.iterrows(), total=df_preds.shape[0], desc="Calculating IoU"):
-        # Original geometry
-        # Reset index of gdf_projected to ensure alignment if indices differ
-        # But gdf_projected comes from gdf which might have gaps?
-        # Actually in main, we did: gdf = gdf[...].copy(). 
-        # extract_features returns X with same index.
-        # model.predict returns array. df_preds created with default index 0..N.
-        # So we need to access gdf_projected by integer position or reset index.
-        
         geom = gdf_projected.geometry.iloc[idx]
         
         w_pred = row['pred_width']
         h_pred = row['pred_height']
         a_pred = row['pred_angle']
         
-        # Centroid
         centroid = geom.centroid
-        
-        # Reconstruct Prediction
         pred_box = create_rect(centroid.x, centroid.y, w_pred, h_pred, a_pred)
         
-        # Validate
         if not geom.is_valid: geom = make_valid(geom)
         if not pred_box.is_valid: pred_box = make_valid(pred_box)
         
@@ -437,7 +407,7 @@ def main():
     print("Creating output shapefile...")
     out_gdf = gpd.GeoDataFrame(
         df_preds[['pred_width', 'pred_height', 'pred_angle', 'pred_iou']], 
-        geometry=gdf_projected.geometry.values, # Keep original polygon geometry for geospecific extrusion
+        geometry=gdf_projected.geometry.values,
         crs=gdf_projected.crs
     )
     
@@ -448,8 +418,6 @@ def main():
     # Save
     print(f"Saving to {args.output_file}...")
     
-    # Determine driver based on extension if needed, but gpd handles it well
-    # For .json/.geojson, driver is "GeoJSON"
     out_ext = os.path.splitext(args.output_file)[1].lower()
     driver = None
     if out_ext in ['.json', '.geojson']:

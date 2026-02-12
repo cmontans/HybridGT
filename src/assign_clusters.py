@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import argparse
 import os
+import sys
 from scipy.spatial import cKDTree
 
 def main():
@@ -12,6 +13,7 @@ def main():
     parser.add_argument("output_csv", help="Path to output CSV for Blender import")
     parser.add_argument("--geospecific_geojson", help="Path to save geospecific building footprints", default=None)
     parser.add_argument("--max_dist", type=float, default=9999.0, help="Maximum fit distance to allow clustering. If exceeded, building is geospecific.")
+    parser.add_argument("--max_levels_cluster", type=float, default=10.0, help="Maximum number of levels to allow clustering. If exceeded, building is geospecific.")
     
     args = parser.parse_args()
     
@@ -22,7 +24,6 @@ def main():
     # Check if levels are present
     has_levels = 'optimum_levels' in df_clusters.columns
     
-    # Create KDTree for fast nearest neighbor search
     if has_levels:
         cluster_points = df_clusters[['optimum_width', 'optimum_height', 'optimum_levels']].values
     else:
@@ -99,27 +100,12 @@ def main():
     else:
         query_points = gdf_buildings[[w_col, h_col]].values
     
-    # Vectorized "Closest Smaller" Logic
+    # Vectorized logic
     print("Calculating distances to all clusters...")
     cluster_dims = cluster_points # (M, D)
     building_dims = query_points  # (N, D)
     
-    # Broadcast to calculate squared euclidean distance
-    # (N, 1, D) - (1, M, D)
     diff = building_dims[:, np.newaxis, :] - cluster_dims[np.newaxis, :, :]
-    
-    # Weighted distance? Levels (1-10) vs Width (10-50).
-    # Width difference of 1m is significant. Level difference of 1 is significant.
-    # 1 level ~= 3m. So difference of 1 level is like 3m difference.
-    # If we treat levels as raw, a difference of 1 is smaller than difference of 3m.
-    # So levels will have less impact than width/height if unscaled.
-    # But usually we want the levels to match closely.
-    # Let's multiply levels difference by 3 (approx height per floor) to weight it?
-    # Actually 'optimize_clusters' used StandardScaler so it found clusters considering variance.
-    # Here we assign based on raw Euclid.
-    # If we don't scale, 'closest' might pick a cluster with right width but wrong levels over one with wrong width but right levels.
-    # Let's keep it simple (raw Euclidean) for now, as consistent with previous logic.
-    
     dist_sq = np.sum(diff**2, axis=2) # (N, M)
     
     # Check "Smaller or Equal" condition
@@ -147,8 +133,6 @@ def main():
     distances = np.sqrt(min_vals)
     
     if fallback_count > 0:
-        # Fallback: building size is smaller than all clusters.
-        # Force fit to closest
         fallback_indices = np.argmin(dist_sq[fallback_mask], axis=1)
         best_idx[fallback_mask] = fallback_indices
         distances[fallback_mask] = np.sqrt(np.min(dist_sq[fallback_mask], axis=1))
@@ -161,8 +145,16 @@ def main():
     if args.geospecific_geojson:
         # 1. Distance > max_dist
         mask_dist = distances > args.max_dist
-        is_geospecific = mask_dist
-        print(f"Identified {np.sum(is_geospecific)} geospecific buildings (Dist > {args.max_dist}).")
+        
+        # 2. Levels > max_levels_cluster (New)
+        mask_tall = np.zeros(len(gdf_buildings), dtype=bool)
+        if has_levels:
+             mask_tall = gdf_buildings[levels_col] > args.max_levels_cluster
+        
+        is_geospecific = mask_dist | mask_tall
+        print(f"Identified {np.sum(mask_dist)} buildings with distance > {args.max_dist}.")
+        print(f"Identified {np.sum(mask_tall)} buildings with levels > {args.max_levels_cluster}.")
+        print(f"Total geospecific buildings: {np.sum(is_geospecific)}.")
         
     # 5. Prepare Output
     output_data = []
@@ -174,19 +166,14 @@ def main():
         idx = indices[i]
         dist = distances[i]
         
-        # Original building data
         building = gdf_buildings.iloc[i]
-        
-        # Cluster data
         cluster_file = df_clusters.iloc[idx]['obj_filename']
         cluster_levels = int(df_clusters.iloc[idx]['optimum_levels']) if has_levels else 1
         
-        # Position (use centroid of polygon for placement)
-        geom = building.geometry
-        centroid = geom.centroid
+        centroid = building.geometry.centroid
         x = centroid.x
         y = centroid.y
-        z = 0 # Ground
+        z = 0
         
         try:
              angle_deg = building[a_col]
@@ -218,7 +205,6 @@ def main():
     if args.geospecific_geojson:
         geospecific_gdf = gdf_buildings[is_geospecific].copy()
         try:
-            # On Windows, sometimes file handles are held. Try deleting if exists.
             if os.path.exists(args.geospecific_geojson):
                 try:
                     os.remove(args.geospecific_geojson)
@@ -226,7 +212,6 @@ def main():
                     print(f"Warning: Could not remove {args.geospecific_geojson}. It might be locked.")
 
             if len(geospecific_gdf) > 0:
-                # Determine driver based on extension
                 out_ext = os.path.splitext(args.geospecific_geojson)[1].lower()
                 driver = "GeoJSON"
                 if out_ext == ".gpkg":
@@ -235,7 +220,6 @@ def main():
                     driver = "ESRI Shapefile"
 
                 print(f"Saving {len(geospecific_gdf)} geospecific footprints to {args.geospecific_geojson} (Driver: {driver})...")
-                # Try saving.
                 try:
                     geospecific_gdf.to_file(args.geospecific_geojson, driver=driver)
                 except Exception as e:
@@ -243,7 +227,6 @@ def main():
                     geospecific_gdf.to_file(args.geospecific_geojson, driver=driver, engine='fiona')
             else:
                 print("No geospecific buildings found.")
-                # Create empty file
                 with open(args.geospecific_geojson, 'w') as f:
                     f.write('{"type": "FeatureCollection", "features": []}')
         except PermissionError:
