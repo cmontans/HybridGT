@@ -135,6 +135,7 @@ def main():
     parser.add_argument("--use_mobb", action="store_true", help="Calculate dimensions using MOBB instead of predicting")
     parser.add_argument("--layer", help="Layer name to read from multi-layer files (e.g. GPKG)")
     parser.add_argument("--min_area", type=float, default=10.0, help="Minimum footprint area to keep (default: 10m2)")
+    parser.add_argument("--levels_col", help="Name of the attribute column containing building level data (e.g. 'building:levels', 'num_floors')")
     
     args = parser.parse_args()
     
@@ -290,6 +291,8 @@ def main():
     # 2. Building Levels Detection (Enhanced)
     levels_col = 'building:levels'
     possible_levels_cols = ['building:levels', 'building_levels', 'building_l', 'levels', 'L']
+    if args.levels_col and args.levels_col not in possible_levels_cols:
+        possible_levels_cols.insert(0, args.levels_col)
     detected_col = None
     for c in possible_levels_cols:
         if c in gdf.columns:

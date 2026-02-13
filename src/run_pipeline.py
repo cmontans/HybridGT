@@ -64,6 +64,7 @@ def main():
     parser.add_argument("--use_mobb", action="store_true", help="Calculate dimensions using MOBB instead of predicting")
     parser.add_argument("--merge", action="store_true", help="Initial step to merge contiguous polygons")
     parser.add_argument("--layer", help="Layer name to read from multi-layer files (e.g. GPKG)")
+    parser.add_argument("--levels_col", help="Name of the attribute column containing building level data (e.g. 'building:levels', 'num_floors')")
     
     args = parser.parse_args()
     
@@ -153,7 +154,9 @@ def main():
         ]
         if args.layer:
             cmd_merge.extend(["--layer", args.layer])
-            
+        if args.levels_col:
+            cmd_merge.extend(["--levels_col", args.levels_col])
+
         run_command(cmd_merge, "Step 0.5: Merge Contiguous Polygons")
         current_input = merged_input_file
         
@@ -178,6 +181,8 @@ def main():
             cmd_predict.append("--use_mobb")
         if args.layer and not args.merge:
             cmd_predict.extend(["--layer", args.layer])
+        if args.levels_col:
+            cmd_predict.extend(["--levels_col", args.levels_col])
         
         purge_outputs([predictions_file])
         run_command(cmd_predict, "Step 1: Predict Dimensions")
