@@ -228,7 +228,19 @@ def main():
     
     # Scripts location
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    
+
+    # Auto-train model if the model file is not present
+    if not os.path.exists(args.model_file):
+        print(f"\nModel not found at '{args.model_file}'. Auto-training on input data ...")
+        sys.path.insert(0, script_dir)
+        from train_mobb import train_model
+        result = train_model(gdf_input, args.model_file)
+        if result is None:
+            print("Error: Auto-training failed. Please supply a pre-trained model or provide "
+                  "more building data (at least 10 valid polygons required).")
+            sys.exit(1)
+        print(f"-> Auto-training complete. Model saved to '{args.model_file}'.\n")
+
     # Check if input is already predictions
     skip_predict = False
     try:
