@@ -9,3 +9,4 @@ trimesh
 scipy
 joblib
 pandas
+requests
