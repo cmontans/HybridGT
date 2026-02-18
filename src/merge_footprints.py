@@ -39,7 +39,7 @@ def remove_small_holes(geom, threshold_ratio=0.1):
             
     return Polygon(exterior, interiors)
 
-def merge_contiguous_polygons(input_path, output_path, buffer_dist=0.01, layer=None):
+def merge_contiguous_polygons(input_path, output_path, buffer_dist=0.01, layer=None, levels_col=None):
     """
     Merges contiguous or overlapping polygons in a GeoJSON/Shapefile/GeoPackage.
     
@@ -127,6 +127,8 @@ def merge_contiguous_polygons(input_path, output_path, buffer_dist=0.01, layer=N
     
     # 1. Detect level-related columns in original data
     possible_cols = ['building:levels', 'building_levels', 'building_l', 'levels', 'L', 'height', 'ele', 'altitude']
+    if levels_col and levels_col not in possible_cols:
+        possible_cols.insert(0, levels_col)
     detected_cols = [c for c in possible_cols if c in gdf.columns]
     
     if detected_cols:
@@ -196,14 +198,15 @@ def main():
     parser.add_argument("output_file", help="Path to output merged file")
     parser.add_argument("--buffer", type=float, default=0.01, help="Buffer distance for merging (default: 0.01)")
     parser.add_argument("--layer", help="Layer name to read from multi-layer files (e.g. GPKG)")
-    
+    parser.add_argument("--levels_col", help="Name of the attribute column containing building level data (e.g. 'building:levels', 'num_floors')")
+
     args = parser.parse_args()
-    
+
     if not os.path.exists(args.input_file):
         print(f"Error: Input file not found: {args.input_file}")
         sys.exit(1)
-        
-    merge_contiguous_polygons(args.input_file, args.output_file, args.buffer, args.layer)
+
+    merge_contiguous_polygons(args.input_file, args.output_file, args.buffer, args.layer, args.levels_col)
 
 if __name__ == "__main__":
     main()
