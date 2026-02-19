@@ -54,8 +54,8 @@ const PipelineNode = memo(function PipelineNode({ id, data }) {
 
   return (
     <div
-      className={`relative rounded-lg border-2 min-w-[230px] bg-slate-800 ${STATUS_BORDER[status]}`}
-      style={{ boxShadow: STATUS_SHADOW[status] }}
+      className={`relative rounded-lg border-2 bg-slate-800 ${STATUS_BORDER[status]}`}
+      style={{ width: 260, boxShadow: STATUS_SHADOW[status] }}
     >
       {/* Running pulse indicator */}
       {status === 'running' && (
@@ -140,8 +140,8 @@ const PipelineNode = memo(function PipelineNode({ id, data }) {
           {params.map((param) => {
             const val = data.params?.[param.id] ?? param.default ?? ''
             return (
-              <div key={param.id} className="flex items-center gap-2">
-                <label className="text-xs text-slate-400 truncate" style={{ minWidth: 80 }}>
+              <div key={param.id} className="flex items-center gap-1.5">
+                <label className="text-xs text-slate-400 truncate flex-shrink-0" style={{ maxWidth: 90 }}>
                   {param.label}
                 </label>
 
@@ -156,8 +156,8 @@ const PipelineNode = memo(function PipelineNode({ id, data }) {
                   <input
                     type="number"
                     step={param.type === 'float' ? 0.01 : 1}
-                    className="ml-auto bg-slate-700 text-white text-xs rounded px-2 py-0.5
-                               border border-slate-600 focus:border-slate-400 outline-none w-24"
+                    className="ml-auto bg-slate-700 text-white text-xs rounded px-1.5 py-0.5
+                               border border-slate-600 focus:border-slate-400 outline-none w-20"
                     value={val}
                     onChange={(e) =>
                       onParamChange(
@@ -169,8 +169,8 @@ const PipelineNode = memo(function PipelineNode({ id, data }) {
                 ) : (
                   <input
                     type="text"
-                    className="ml-auto bg-slate-700 text-white text-xs rounded px-2 py-0.5
-                               border border-slate-600 focus:border-slate-400 outline-none w-32"
+                    className="ml-auto bg-slate-700 text-white text-xs rounded px-1.5 py-0.5
+                               border border-slate-600 focus:border-slate-400 outline-none min-w-0 flex-1"
                     placeholder={param.optional ? 'optional' : String(param.default ?? '')}
                     value={val === null ? '' : val}
                     onChange={(e) => onParamChange(param.id, e.target.value || null)}

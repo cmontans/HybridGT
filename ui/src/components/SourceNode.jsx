@@ -19,8 +19,8 @@ const SourceNode = memo(function SourceNode({ id, data }) {
 
   return (
     <div
-      className="relative rounded-lg border-2 min-w-[220px]"
-      style={{ backgroundColor: '#1e293b', borderColor: color + '88' }}
+      className="relative rounded-lg border-2"
+      style={{ width: 240, backgroundColor: '#1e293b', borderColor: color + '88' }}
     >
       {/* Header */}
       <div
