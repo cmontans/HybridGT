@@ -1222,3 +1222,5 @@ output/summary.md
 test_instances.csv
 test_merged.geojson
 test_predictions.geojson
+ui/node_modules/
+.hybridgt_cache/
