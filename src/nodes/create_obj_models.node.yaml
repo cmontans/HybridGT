@@ -1,0 +1,44 @@
+id: create_obj_models
+name: Create OBJ Models
+category: Generation
+description: Generates geotypical box OBJ models for each cluster prototype
+color: "#f97316"
+
+ports:
+  inputs:
+    - id: clusters_csv
+      label: Cluster Centers
+      type: file
+      accepts: [csv]
+      required: true
+  outputs:
+    - id: output_dir
+      label: OBJ Models Directory
+      type: directory
+
+params:
+  - id: texture
+    label: Facade Texture
+    type: string
+    default: "textures/facade.png"
+    optional: true
+  - id: roof_texture
+    label: Roof Texture
+    type: string
+    default: "textures/roof.png"
+    optional: true
+  - id: emissive_texture
+    label: Emissive Texture
+    type: string
+    optional: true
+
+command:
+  executable: python
+  script: create_obj_models.py
+  positional:
+    - port: clusters_csv
+    - port: output_dir
+  flags:
+    - {flag: --texture, param: texture, omit_if_null: true}
+    - {flag: --roof_texture, param: roof_texture, omit_if_null: true}
+    - {flag: --emissive_texture, param: emissive_texture, omit_if_null: true}

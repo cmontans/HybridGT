@@ -1,0 +1,28 @@
+id: vis_histograms
+name: Visualize Histograms
+category: Analysis
+description: Generates distribution histograms for predicted building dimensions
+color: "#eab308"
+
+ports:
+  inputs:
+    - id: input_shp
+      label: Predictions
+      type: file
+      accepts: [geojson, shp]
+      required: true
+  outputs:
+    - id: output_img
+      label: Histogram Image
+      type: file
+      produces: png
+
+params: []
+
+command:
+  executable: python
+  script: vis_histograms.py
+  positional:
+    - port: input_shp
+    - port: output_img
+  flags: []

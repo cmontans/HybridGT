@@ -10,3 +10,8 @@ scipy
 joblib
 pandas
 requests
+fastapi
+"uvicorn[standard]"
+pyyaml
+websockets
+python-multipart

@@ -1,0 +1,49 @@
+id: create_geospecific
+name: Create Geospecific Models
+category: Generation
+description: Generates unique extruded OBJ models for geospecific buildings using their real footprints
+color: "#ec4899"
+
+ports:
+  inputs:
+    - id: input_geojson
+      label: Geospecific Buildings
+      type: file
+      accepts: [geojson]
+      required: true
+  outputs:
+    - id: output_dir
+      label: Geospecific Models Dir
+      type: directory
+    - id: output_csv
+      label: Geospecific Instances
+      type: file
+      produces: csv
+
+params:
+  - id: texture
+    label: Facade Texture
+    type: string
+    default: "textures/facade.png"
+    optional: true
+  - id: roof_texture
+    label: Roof Texture
+    type: string
+    default: "textures/roof.png"
+    optional: true
+  - id: emissive_texture
+    label: Emissive Texture
+    type: string
+    optional: true
+
+command:
+  executable: python
+  script: create_geospecific.py
+  positional:
+    - port: input_geojson
+    - port: output_dir
+    - port: output_csv
+  flags:
+    - {flag: --texture, param: texture, omit_if_null: true}
+    - {flag: --roof_texture, param: roof_texture, omit_if_null: true}
+    - {flag: --emissive_texture, param: emissive_texture, omit_if_null: true}
