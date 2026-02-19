@@ -1,0 +1,154 @@
+{
+  "nodes": [
+    {
+      "id": "source_input",
+      "type": "file_input",
+      "position": { "x": 40, "y": 180 },
+      "data": { "params": { "path": "" } }
+    },
+    {
+      "id": "source_model",
+      "type": "file_input",
+      "position": { "x": 40, "y": 360 },
+      "data": { "params": { "path": "models/mobb_rf.pkl" } }
+    },
+    {
+      "id": "merge_footprints_1",
+      "type": "merge_footprints",
+      "position": { "x": 320, "y": 120 },
+      "data": {
+        "params": {
+          "buffer": 0.01,
+          "layer": null,
+          "levels_col": null
+        }
+      }
+    },
+    {
+      "id": "predict_mobb_1",
+      "type": "predict_mobb",
+      "position": { "x": 620, "y": 180 },
+      "data": {
+        "params": {
+          "model": "models/mobb_rf.pkl",
+          "use_mobb": false,
+          "min_area": 10.0,
+          "layer": null,
+          "levels_col": null
+        }
+      }
+    },
+    {
+      "id": "vis_histograms_1",
+      "type": "vis_histograms",
+      "position": { "x": 920, "y": 40 },
+      "data": { "params": {} }
+    },
+    {
+      "id": "optimize_clusters_1",
+      "type": "optimize_clusters",
+      "position": { "x": 920, "y": 260 },
+      "data": {
+        "params": {
+          "n_clusters": 100,
+          "min_iou": 0.0
+        }
+      }
+    },
+    {
+      "id": "assign_clusters_1",
+      "type": "assign_clusters",
+      "position": { "x": 1220, "y": 200 },
+      "data": {
+        "params": {
+          "max_dist": 9999.0,
+          "max_levels_cluster": 10.0
+        }
+      }
+    },
+    {
+      "id": "create_obj_models_1",
+      "type": "create_obj_models",
+      "position": { "x": 1520, "y": 100 },
+      "data": {
+        "params": {
+          "texture": "textures/facade.png",
+          "roof_texture": "textures/roof.png",
+          "emissive_texture": null
+        }
+      }
+    },
+    {
+      "id": "create_geospecific_1",
+      "type": "create_geospecific",
+      "position": { "x": 1520, "y": 360 },
+      "data": {
+        "params": {
+          "texture": "textures/facade.png",
+          "roof_texture": "textures/roof.png",
+          "emissive_texture": null
+        }
+      }
+    },
+    {
+      "id": "reconstruct_geotypical_1",
+      "type": "reconstruct_geotypical_footprints",
+      "position": { "x": 1820, "y": 100 },
+      "data": {
+        "params": { "crs": "EPSG:32630" }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "source_input", "sourceHandle": "value",
+      "target": "merge_footprints_1", "targetHandle": "input_file"
+    },
+    {
+      "id": "e2",
+      "source": "merge_footprints_1", "sourceHandle": "output_file",
+      "target": "predict_mobb_1", "targetHandle": "input_file"
+    },
+    {
+      "id": "e3",
+      "source": "source_model", "sourceHandle": "value",
+      "target": "predict_mobb_1", "targetHandle": "model"
+    },
+    {
+      "id": "e4",
+      "source": "predict_mobb_1", "sourceHandle": "output_file",
+      "target": "vis_histograms_1", "targetHandle": "input_shp"
+    },
+    {
+      "id": "e5",
+      "source": "predict_mobb_1", "sourceHandle": "output_file",
+      "target": "optimize_clusters_1", "targetHandle": "input_shp"
+    },
+    {
+      "id": "e6",
+      "source": "predict_mobb_1", "sourceHandle": "output_file",
+      "target": "assign_clusters_1", "targetHandle": "predictions_file"
+    },
+    {
+      "id": "e7",
+      "source": "optimize_clusters_1", "sourceHandle": "output_csv",
+      "target": "assign_clusters_1", "targetHandle": "clusters_csv"
+    },
+    {
+      "id": "e8",
+      "source": "optimize_clusters_1", "sourceHandle": "output_csv",
+      "target": "create_obj_models_1", "targetHandle": "clusters_csv"
+    },
+    {
+      "id": "e9",
+      "source": "assign_clusters_1", "sourceHandle": "geospecific_geojson",
+      "target": "create_geospecific_1", "targetHandle": "input_geojson"
+    },
+    {
+      "id": "e10",
+      "source": "assign_clusters_1", "sourceHandle": "output_csv",
+      "target": "reconstruct_geotypical_1", "targetHandle": "instances_csv"
+    }
+  ]
+}

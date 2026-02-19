@@ -1,0 +1,49 @@
+id: assign_clusters
+name: Assign Clusters
+category: Clustering
+description: Assigns each building to its nearest cluster and identifies geospecific outliers
+color: "#06b6d4"
+
+ports:
+  inputs:
+    - id: predictions_file
+      label: Predictions
+      type: file
+      accepts: [geojson, shp]
+      required: true
+    - id: clusters_csv
+      label: Cluster Centers
+      type: file
+      accepts: [csv]
+      required: true
+  outputs:
+    - id: output_csv
+      label: Instances CSV
+      type: file
+      produces: csv
+    - id: geospecific_geojson
+      label: Geospecific Buildings
+      type: file
+      produces: geojson
+
+params:
+  - id: max_dist
+    label: Max Fit Distance
+    type: float
+    default: 9999.0
+  - id: max_levels_cluster
+    label: Max Levels for Clustering
+    type: float
+    default: 10.0
+
+command:
+  executable: python
+  script: assign_clusters.py
+  positional:
+    - port: predictions_file
+    - port: clusters_csv
+    - port: output_csv
+  flags:
+    - {flag: --geospecific_geojson, port: geospecific_geojson, omit_if_null: true}
+    - {flag: --max_dist, param: max_dist, omit_if_null: false}
+    - {flag: --max_levels_cluster, param: max_levels_cluster, omit_if_null: false}

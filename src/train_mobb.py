@@ -127,13 +127,102 @@ def extract_features(gdf):
     
     return features
 
+def train_model(gdf, model_path):
+    """Train the MOBB Random Forest model from a GeoDataFrame of building footprints.
+
+    The model is self-supervised: MOBB parameters are computed from the input
+    geometries and used as ground truth targets.
+
+    Args:
+        gdf: GeoDataFrame with building polygon geometries.
+        model_path: Destination path for the saved model (.pkl).
+
+    Returns:
+        model_path on success, None if there are not enough valid polygons.
+    """
+    print(f"Auto-training model from {len(gdf)} input features...")
+
+    # Preprocessing
+    gdf = gdf[gdf.geometry.notna()].copy()
+    gdf['geometry'] = gdf.geometry.apply(make_valid)
+    gdf = gdf[~gdf.geometry.is_empty]
+    gdf = gdf[gdf.geometry.type.isin(['Polygon', 'MultiPolygon'])]
+    gdf = gdf.explode(index_parts=False)
+    gdf = gdf[gdf.geometry.type == 'Polygon'].copy()
+
+    print(f"After preprocessing: {len(gdf)} polygons.")
+
+    if len(gdf) < 10:
+        print(f"Error: Not enough valid building polygons to train a model "
+              f"(found {len(gdf)}, need at least 10).")
+        return None
+
+    print("Reprojecting to EPSG:32630 (UTM Zone 30N)...")
+    if gdf.crs is None:
+        print("Warning: Source CRS is missing. Assuming EPSG:4326.")
+        gdf = gdf.set_crs(epsg=4326)
+    gdf = gdf.to_crs(epsg=32630)
+
+    if len(gdf) > 20000:
+        print("Dataset large, sampling 20000 polygons for training...")
+        gdf = gdf.sample(20000, random_state=42)
+
+    # Generate Ground Truth (MOBB)
+    print("Generating ground truth (MOBB)...")
+    mobb_results = gdf.geometry.apply(get_mobb_params)
+    y_raw = pd.DataFrame(mobb_results.tolist(), columns=['width', 'height', 'angle'], index=gdf.index)
+
+    mask = (y_raw['width'] > 0) & (y_raw['height'] > 0)
+    gdf = gdf[mask]
+    y_raw = y_raw[mask]
+
+    # Transform targets: encode angle as sin/cos
+    y = pd.DataFrame(index=y_raw.index)
+    y['width'] = y_raw['width']
+    y['height'] = y_raw['height']
+    rads = np.radians(y_raw['angle'])
+    y['sin_2a'] = np.sin(2 * rads)
+    y['cos_2a'] = np.cos(2 * rads)
+
+    print(f"Training on {len(gdf)} samples...")
+
+    # Feature Engineering
+    X = extract_features(gdf)
+
+    # Train / test split
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+    print("Training Random Forest Regressor...")
+    model = RandomForestRegressor(n_estimators=100, n_jobs=-1, random_state=42)
+    model.fit(X_train, y_train)
+
+    # Quick evaluation
+    y_pred_raw = model.predict(X_test)
+    y_pred_df = pd.DataFrame(y_pred_raw, index=y_test.index, columns=y_test.columns)
+    mae_w = mean_absolute_error(y_test['width'], y_pred_df['width'])
+    mae_h = mean_absolute_error(y_test['height'], y_pred_df['height'])
+    y_test_angle = np.degrees(0.5 * np.arctan2(y_test['sin_2a'], y_test['cos_2a']))
+    y_pred_angle = np.degrees(0.5 * np.arctan2(y_pred_df['sin_2a'], y_pred_df['cos_2a']))
+    angle_diff = np.abs(y_test_angle - y_pred_angle)
+    angle_diff = np.minimum(angle_diff, 180 - angle_diff)
+    mae_a = np.mean(angle_diff)
+    print(f"Training complete — MAE Width: {mae_w:.2f} m | MAE Height: {mae_h:.2f} m | MAE Angle: {mae_a:.2f} deg")
+
+    # Save model
+    model_dir = os.path.dirname(os.path.abspath(model_path))
+    if model_dir:
+        os.makedirs(model_dir, exist_ok=True)
+    joblib.dump(model, model_path)
+    print(f"Model saved to {model_path}")
+    return model_path
+
+
 def main():
     # Paths
     print("Initializing...")
     shapefile_path = os.path.join("cantabria-260206-free.shp", "gis_osm_buildings_a_free_1.shp")
-    model_dir = "models"
-    os.makedirs(model_dir, exist_ok=True)
-    
+    model_path = os.path.join("models", "mobb_rf.pkl")
+
     # 1. Load Data
     print(f"Loading shapefile from {shapefile_path}...")
     if not os.path.exists(shapefile_path):
@@ -142,147 +231,50 @@ def main():
 
     gdf = gpd.read_file(shapefile_path)
     print(f"Loaded {len(gdf)} polygons.")
-    
-    # 2. Preprocessing & Projection
-    gdf = gdf[gdf.geometry.type == 'Polygon'].copy()
-    gdf['geometry'] = gdf.geometry.apply(make_valid)
-    gdf = gdf[~gdf.geometry.is_empty]
-    
-    print("Reprojecting to EPSG:32630 (UTM Zone 30N)...")
-    if gdf.crs is None:
-        print("Warning: Source CRS is missing. Assuming EPSG:4326.")
-        gdf.set_crs(epsg=4326, inplace=True)
-    
-    gdf = gdf.to_crs(epsg=32630)
-    
-    if len(gdf) > 20000:
-        print("Dataset large, sampling 20000 polygons for training...")
-        gdf = gdf.sample(20000, random_state=42)
-    
-    # 3. Generate Ground Truth
-    print("Generating Ground Truth (MOBB)...")
-    mobb_results = gdf.geometry.apply(get_mobb_params)
-    
-    # Raw targets
-    y_raw = pd.DataFrame(mobb_results.tolist(), columns=['width', 'height', 'angle'], index=gdf.index)
-    
-    # Valid Mask
+
+    result = train_model(gdf, model_path)
+    if result is None:
+        return
+
+    # Reload for visualization (model already saved inside train_model)
+    gdf_proj = gdf[gdf.geometry.type == 'Polygon'].copy()
+    gdf_proj['geometry'] = gdf_proj.geometry.apply(make_valid)
+    gdf_proj = gdf_proj[~gdf_proj.geometry.is_empty]
+    if gdf_proj.crs is None:
+        gdf_proj = gdf_proj.set_crs(epsg=4326)
+    gdf_proj = gdf_proj.to_crs(epsg=32630)
+    if len(gdf_proj) > 20000:
+        gdf_proj = gdf_proj.sample(20000, random_state=42)
+
+    mobb_results = gdf_proj.geometry.apply(get_mobb_params)
+    y_raw = pd.DataFrame(mobb_results.tolist(), columns=['width', 'height', 'angle'], index=gdf_proj.index)
     mask = (y_raw['width'] > 0) & (y_raw['height'] > 0)
-    gdf = gdf[mask]
+    gdf_proj = gdf_proj[mask]
     y_raw = y_raw[mask]
-    
-    # Transform Targets
-    # Convert angle to sin(2a), cos(2a)
+
     y = pd.DataFrame(index=y_raw.index)
     y['width'] = y_raw['width']
     y['height'] = y_raw['height']
-    
     rads = np.radians(y_raw['angle'])
     y['sin_2a'] = np.sin(2 * rads)
     y['cos_2a'] = np.cos(2 * rads)
-    
-    print("Final dataset size:", len(gdf))
-    
-    # 4. Feature Engineering
-    print("Extracting features...")
-    X = extract_features(gdf)
-    
-    # 5. Model Training
-    print("Splitting data...")
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    
-    print("Training Random Forest Regressor...")
-    model = RandomForestRegressor(n_estimators=100, n_jobs=-1, random_state=42) # Increased estimators
-    model.fit(X_train, y_train)
-    
-    # 6. Evaluation
-    print("Evaluating...")
+
+    X = extract_features(gdf_proj)
+    _, X_test, _, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+    model = joblib.load(model_path)
     y_pred_raw = model.predict(X_test)
     y_pred_df = pd.DataFrame(y_pred_raw, index=y_test.index, columns=y_test.columns)
-    
-    # Reconstruct Angle
-    y_test_angle = np.degrees(0.5 * np.arctan2(y_test['sin_2a'], y_test['cos_2a']))
     y_pred_angle = np.degrees(0.5 * np.arctan2(y_pred_df['sin_2a'], y_pred_df['cos_2a']))
-    
-    # Metrics
-    mae_w = mean_absolute_error(y_test['width'], y_pred_df['width'])
-    mae_h = mean_absolute_error(y_test['height'], y_pred_df['height'])
-    
-    angle_diff = np.abs(y_test_angle - y_pred_angle)
-    angle_diff = np.minimum(angle_diff, 180 - angle_diff) 
-    mae_a = np.mean(angle_diff)
-    
-    print(f"MAE Width: {mae_w:.4f} m")
-    print(f"MAE Height: {mae_h:.4f} m")
-    print(f"MAE Angle: {mae_a:.4f} deg")
-    
-    # --- Calculate Fitting Percentage (IoU) ---
-    print("Calculating Fitting Percentage (IoU)...")
-    ious = []
-    
-    # We need the original geometries for X_test
-    # X_test indices match y_test indices
-    test_indices = y_test.index
-    
-    for idx in tqdm(test_indices, desc="Calculating IoU"):
-        # Original Polygon
-        geom = gdf.geometry.loc[idx]
-        
-        # Predicted Parameters
-        # y_pred_df is indexed by integer range 0..n_test-1 if not careful, 
-        # but we created it with y_test.index above, so loc[idx] should work if dataframe
-        # Actually y_pred_raw was numpy array. y_pred_df created with index=y_test.index.
-        
-        w_pred = y_pred_df.loc[idx, 'width']
-        h_pred = y_pred_df.loc[idx, 'height']
-        
-        sin_2a = y_pred_df.loc[idx, 'sin_2a']
-        cos_2a = y_pred_df.loc[idx, 'cos_2a']
-        a_pred = np.degrees(0.5 * np.arctan2(sin_2a, cos_2a))
-        
-        # Centroid (we assume shared centroid for MOBB task)
-        centroid = geom.centroid
-        
-        # Reconstruct Predicted Box
-        pred_box = create_rect(centroid.x, centroid.y, w_pred, h_pred, a_pred)
-        
-        # Validate geometries
-        if not geom.is_valid: geom = make_valid(geom)
-        if not pred_box.is_valid: pred_box = make_valid(pred_box)
-        
-        # Calculate IoU
-        try:
-            intersection = geom.intersection(pred_box).area
-            union = geom.union(pred_box).area
-            
-            if union > 0:
-                iou = intersection / union
-            else:
-                iou = 0
-        except Exception:
-            iou = 0
-            
-        ious.append(iou)
-        
-    avg_iou = np.mean(ious)
-    print(f"Average Intersection over Union (IoU): {avg_iou:.4f}")
-    print(f"Fitting Percentage: {avg_iou * 100:.2f}%")
-    
-    # Save Model
-    model_path = os.path.join(model_dir, "mobb_rf.pkl")
-    joblib.dump(model, model_path)
-    print(f"Model saved to {model_path}")
-    
-    # 7. Visualization
-    # Prepare DataFrame for plotting
+    y_test_angle = np.degrees(0.5 * np.arctan2(y_test['sin_2a'], y_test['cos_2a']))
+
     y_pred_final = y_pred_df.copy()
     y_pred_final['angle'] = y_pred_angle
-    
     y_test_final = y_test.copy()
     y_test_final['angle'] = y_test_angle
-    
+
     print("Generating visualization...")
-    plot_results(gdf.loc[y_test.index], y_test_final, y_pred_final)
+    plot_results(gdf_proj.loc[y_test.index], y_test_final, y_pred_final)
 
 def plot_results(gdf_test, y_test, y_pred):
     n_samples = 4

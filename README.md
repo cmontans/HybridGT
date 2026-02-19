@@ -8,7 +8,7 @@ HybridGT (Hybrid Geotypical/Geospecific) is a technical pipeline designed to tra
 
 - `src/`: Core Python source code.
 - `textures/`: Default facade and roof textures.
-- `models/`: Pre-trained AI models for dimension prediction.
+- `models/`: Trained AI models for dimension prediction (auto-generated on first run if absent).
 - `pipeline_output/`: Default directory for generated assets and KPIs.
 
 ---
@@ -62,12 +62,18 @@ Generates a `geotypical_footprints.geojson` representing the optimized bounding 
 ## 💻 How to Run
 
 ### 1. Run the Pipeline
-Execute the main script from the project root. You must provide an input file, a model file, and an output directory.
+Execute the main script from the project root. You must provide a model file path and an output directory, plus **one** input source (a local file **or** `--oaci`).
 
-**Standard Run (Clustering):**
+**Standard Run (local file):**
 ```bash
 python src/run_pipeline.py export.geojson models/mobb_rf.pkl ./output
 ```
+
+**Download from OpenStreetMap via ICAO airport code:**
+```bash
+python src/run_pipeline.py --oaci WMSA models/mobb_rf.pkl ./output
+```
+This queries the Overpass API for all building footprints within 25 km of the specified airport and uses them as pipeline input. The downloaded GeoJSON is saved to the output directory for reuse.
 
 **GeoPackage with Layer Selection:**
 ```bash
@@ -80,7 +86,25 @@ python src/run_pipeline.py data.gpkg models/mobb_rf.pkl ./output --layer buildin
 python src/run_pipeline.py export.geojson models/mobb_rf.pkl ./output --merge --use_mobb --max_dist 10
 ```
 
-### 2. Run with Docker (Optional)
+### 2. Auto-Training the Model
+If the model file does not exist, the pipeline **automatically trains it** from the input data before continuing. No separate training step is required:
+
+```bash
+# First run — model is absent, pipeline trains it automatically, then runs
+python src/run_pipeline.py --oaci LEMD models/mobb_rf.pkl ./output
+
+# Subsequent runs — existing model is reused
+python src/run_pipeline.py --oaci LEMD models/mobb_rf.pkl ./output
+```
+
+The model is self-supervised: MOBB parameters are computed directly from the input building geometries and used as ground-truth labels. Training metrics (MAE for width, height, and angle) are printed to the console when this occurs.
+
+To retrain the model manually at any time:
+```bash
+python src/train_mobb.py
+```
+
+### 3. Run with Docker (Optional)
 For a consistent environment, you can run the pipeline using Docker.
 
 **Build the image:**

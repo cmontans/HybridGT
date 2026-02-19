@@ -7,6 +7,9 @@ import time
 import pyogrio
 import pandas as pd
 import geopandas as gpd
+import requests
+from shapely.geometry import Polygon
+from shapely.ops import unary_union
 
 def purge_outputs(filepaths):
     """
@@ -41,10 +44,87 @@ def run_command(cmd, description):
         print(f"-> Error: {description} failed with exit code {e.returncode}.")
         sys.exit(e.returncode)
 
+def download_overpass(oaci_code, output_file):
+    """Download building footprints within 25 km of an airport via its ICAO code using the Overpass API."""
+    query = f"""[out:json][timeout:900];
+
+// 1. Find the airport feature using the ICAO code
+nwr["icao"="{oaci_code}"]->.airport;
+
+// 2. Search for buildings within 25km of that specific result
+(
+  nwr["building"](around.airport:25000);
+);
+
+// 3. Output full footprints
+out geom;
+"""
+    print(f"Querying Overpass API for ICAO code: {oaci_code} ...")
+    url = "https://overpass-api.de/api/interpreter"
+    try:
+        response = requests.post(url, data={"data": query}, timeout=960)
+        response.raise_for_status()
+    except requests.RequestException as e:
+        print(f"Error: Overpass API request failed: {e}")
+        sys.exit(1)
+
+    data = response.json()
+    elements = data.get("elements", [])
+    print(f"Received {len(elements)} elements from Overpass API.")
+
+    records = []
+    for el in elements:
+        etype = el.get("type")
+        tags = el.get("tags", {})
+
+        if etype == "way":
+            geom_nodes = el.get("geometry", [])
+            if len(geom_nodes) >= 3:
+                coords = [(n["lon"], n["lat"]) for n in geom_nodes]
+                try:
+                    poly = Polygon(coords)
+                    if poly.is_valid and not poly.is_empty:
+                        rec = {"geometry": poly}
+                        rec.update(tags)
+                        records.append(rec)
+                except Exception:
+                    pass
+
+        elif etype == "relation":
+            outer_rings = []
+            for member in el.get("members", []):
+                if member.get("role") == "outer" and "geometry" in member:
+                    ring = [(n["lon"], n["lat"]) for n in member["geometry"]]
+                    if len(ring) >= 3:
+                        outer_rings.append(ring)
+            if outer_rings:
+                try:
+                    parts = [Polygon(c) for c in outer_rings if len(c) >= 3]
+                    poly = unary_union(parts)
+                    if poly.is_valid and not poly.is_empty:
+                        rec = {"geometry": poly}
+                        rec.update(tags)
+                        records.append(rec)
+                except Exception:
+                    pass
+
+    if not records:
+        print(f"Error: No building footprints found for ICAO code '{oaci_code}'. "
+              "Check that the code is correct and the airport has an 'icao' tag in OpenStreetMap.")
+        sys.exit(1)
+
+    gdf = gpd.GeoDataFrame(records, crs="EPSG:4326")
+    gdf.to_file(output_file, driver="GeoJSON")
+    print(f"Saved {len(gdf)} building footprints to: {output_file}")
+    return output_file
+
+
 def main():
     parser = argparse.ArgumentParser(description="Run the full MOBB pipeline: Predict -> Histograms -> Optimize -> Assign -> OBJ Models.")
     
-    parser.add_argument("input_file", help="Path to input building footprints (Shapefile, GeoJSON, or GeoPackage)")
+    parser.add_argument("input_file", nargs="?", default=None,
+                        help="Path to input building footprints (Shapefile, GeoJSON, or GeoPackage). "
+                             "Not required when --oaci is used.")
     parser.add_argument("model_file", help="Path to trained Random Forest model (.pkl)")
     parser.add_argument("output_dir", help="Directory to store all outputs")
     
@@ -65,8 +145,18 @@ def main():
     parser.add_argument("--merge", action="store_true", help="Initial step to merge contiguous polygons")
     parser.add_argument("--layer", help="Layer name to read from multi-layer files (e.g. GPKG)")
     parser.add_argument("--levels_col", help="Name of the attribute column containing building level data (e.g. 'building:levels', 'num_floors')")
-    
+    parser.add_argument("--oaci", metavar="ICAO_CODE",
+                        help="ICAO airport code (e.g. WMSA). Downloads building footprints within 25 km "
+                             "of the airport from the Overpass API and uses them as pipeline input. "
+                             "Mutually exclusive with providing input_file directly.")
+
     args = parser.parse_args()
+
+    # Validate: exactly one of input_file or --oaci must be provided
+    if args.oaci and args.input_file:
+        parser.error("Provide either input_file or --oaci, not both.")
+    if not args.oaci and not args.input_file:
+        parser.error("One of input_file or --oaci is required.")
     
     start_time_total = time.time()
     kpis = {}
@@ -78,10 +168,17 @@ def main():
         args.emissive_texture = None
     
     # 0. Setup
+    # If --oaci is given, download building footprints from Overpass API first
+    if args.oaci:
+        os.makedirs(args.output_dir, exist_ok=True)
+        overpass_file = os.path.join(args.output_dir, f"overpass_{args.oaci}.geojson")
+        download_overpass(args.oaci, overpass_file)
+        args.input_file = overpass_file
+
     if not os.path.exists(args.input_file):
         print(f"Error: Input file not found: {args.input_file}")
         sys.exit(1)
-        
+
     print(f"Loading input footprints: {args.input_file}")
     
     # Check for multi-layer GPKG
@@ -131,7 +228,19 @@ def main():
     
     # Scripts location
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    
+
+    # Auto-train model if the model file is not present
+    if not os.path.exists(args.model_file):
+        print(f"\nModel not found at '{args.model_file}'. Auto-training on input data ...")
+        sys.path.insert(0, script_dir)
+        from train_mobb import train_model
+        result = train_model(gdf_input, args.model_file)
+        if result is None:
+            print("Error: Auto-training failed. Please supply a pre-trained model or provide "
+                  "more building data (at least 10 valid polygons required).")
+            sys.exit(1)
+        print(f"-> Auto-training complete. Model saved to '{args.model_file}'.\n")
+
     # Check if input is already predictions
     skip_predict = False
     try:

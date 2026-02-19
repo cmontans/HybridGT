@@ -1,0 +1,58 @@
+id: predict_mobb
+name: Predict MOBB
+category: Prediction
+description: Predicts building dimensions (width, height, angle) using a trained Random Forest model
+color: "#8b5cf6"
+
+ports:
+  inputs:
+    - id: input_file
+      label: Buildings
+      type: file
+      accepts: [geojson, gpkg, shp]
+      required: true
+    - id: model
+      label: Model File
+      type: file
+      accepts: [pkl]
+      required: false
+  outputs:
+    - id: output_file
+      label: Predictions
+      type: file
+      produces: geojson
+
+params:
+  - id: model
+    label: Model Path
+    type: string
+    default: "models/mobb_rf.pkl"
+  - id: use_mobb
+    label: Use MOBB Directly
+    type: boolean
+    default: false
+  - id: layer
+    label: Layer Name
+    type: string
+    optional: true
+  - id: min_area
+    label: Min Area (m²)
+    type: float
+    default: 10.0
+  - id: levels_col
+    label: Levels Column
+    type: string
+    optional: true
+
+command:
+  executable: python
+  script: predict_mobb.py
+  positional:
+    - port: input_file
+    - port: output_file
+  flags:
+    - {flag: --model, param: model, omit_if_null: false}
+    - {flag: --use_mobb, param: use_mobb, type: flag, omit_if_false: true}
+    - {flag: --layer, param: layer, omit_if_null: true}
+    - {flag: --min_area, param: min_area, omit_if_null: false}
+    - {flag: --levels_col, param: levels_col, omit_if_null: true}

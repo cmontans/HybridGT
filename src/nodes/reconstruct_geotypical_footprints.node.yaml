@@ -1,0 +1,33 @@
+id: reconstruct_geotypical_footprints
+name: Reconstruct Footprints
+category: Analysis
+description: Reconstructs oriented bounding box footprints from instances CSV for GIS verification
+color: "#22c55e"
+
+ports:
+  inputs:
+    - id: instances_csv
+      label: Instances CSV
+      type: file
+      accepts: [csv]
+      required: true
+  outputs:
+    - id: output_geojson
+      label: Geotypical Footprints
+      type: file
+      produces: geojson
+
+params:
+  - id: crs
+    label: CRS
+    type: string
+    default: "EPSG:32630"
+
+command:
+  executable: python
+  script: reconstruct_geotypical_footprints.py
+  positional:
+    - port: instances_csv
+    - port: output_geojson
+  flags:
+    - {flag: --crs, param: crs, omit_if_null: false}

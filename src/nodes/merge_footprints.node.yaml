@@ -1,0 +1,43 @@
+id: merge_footprints
+name: Merge Footprints
+category: Preprocessing
+description: Merges contiguous or overlapping building footprints with attribute preservation
+color: "#f59e0b"
+
+ports:
+  inputs:
+    - id: input_file
+      label: Buildings
+      type: file
+      accepts: [geojson, gpkg, shp]
+      required: true
+  outputs:
+    - id: output_file
+      label: Merged Buildings
+      type: file
+      produces: geojson
+
+params:
+  - id: buffer
+    label: Buffer Distance (m)
+    type: float
+    default: 0.01
+  - id: layer
+    label: Layer Name
+    type: string
+    optional: true
+  - id: levels_col
+    label: Levels Column
+    type: string
+    optional: true
+
+command:
+  executable: python
+  script: merge_footprints.py
+  positional:
+    - port: input_file
+    - port: output_file
+  flags:
+    - {flag: --buffer, param: buffer, omit_if_null: false}
+    - {flag: --layer, param: layer, omit_if_null: true}
+    - {flag: --levels_col, param: levels_col, omit_if_null: true}

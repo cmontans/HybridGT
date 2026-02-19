@@ -1,0 +1,43 @@
+id: optimize_clusters
+name: Optimize Clusters
+category: Clustering
+description: Runs K-Means clustering on building dimensions to find geotypical prototypes
+color: "#3b82f6"
+
+ports:
+  inputs:
+    - id: input_shp
+      label: Predictions
+      type: file
+      accepts: [geojson, shp]
+      required: true
+  outputs:
+    - id: output_csv
+      label: Cluster Centers
+      type: file
+      produces: csv
+
+params:
+  - id: n_clusters
+    label: Number of Clusters
+    type: int
+    default: 100
+  - id: min_iou
+    label: Min IoU Filter
+    type: float
+    default: 0.0
+  - id: plot
+    label: Plot Output Path
+    type: string
+    optional: true
+
+command:
+  executable: python
+  script: optimize_clusters.py
+  positional:
+    - port: input_shp
+    - port: output_csv
+  flags:
+    - {flag: --n_clusters, param: n_clusters, omit_if_null: false}
+    - {flag: --min_iou, param: min_iou, omit_if_null: false}
+    - {flag: --plot, param: plot, omit_if_null: true}
