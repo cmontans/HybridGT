@@ -101,33 +101,26 @@ export default function App() {
   }, [nodeStatuses])
 
   // -------------------------------------------------------------------------
-  // React Flow change handlers
+  // React Flow change handlers — strictly handle RF change objects only
   // -------------------------------------------------------------------------
   const onNodesChange = useCallback(
-    (changes) => {
-      if (Array.isArray(changes) && changes.length > 0 && typeof changes[0] === 'object' && changes[0].type) {
-        // React Flow internal change objects
-        setNodes((ns) => applyNodeChanges(changes, ns))
-      } else if (typeof changes === 'function') {
-        setNodes(changes)
-      } else {
-        // Direct array set from drop / load
-        setNodes(changes)
-      }
-    },
+    (changes) => setNodes((ns) => applyNodeChanges(changes, ns)),
     [],
   )
 
   const onEdgesChange = useCallback(
-    (changes) => {
-      if (Array.isArray(changes) && changes.length > 0 && typeof changes[0] === 'object' && changes[0].type) {
-        setEdges((es) => applyEdgeChanges(changes, es))
-      } else if (typeof changes === 'function') {
-        setEdges(changes)
-      } else {
-        setEdges(changes)
-      }
-    },
+    (changes) => setEdges((es) => applyEdgeChanges(changes, es)),
+    [],
+  )
+
+  // Used by PipelineCanvas for drop and connect events
+  const onAddNode = useCallback(
+    (node) => setNodes((ns) => [...ns, node]),
+    [],
+  )
+
+  const onAddEdge = useCallback(
+    (edge) => setEdges((es) => [...es, edge]),
     [],
   )
 
@@ -336,6 +329,8 @@ export default function App() {
               edges={edges}
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
+              onAddNode={onAddNode}
+              onAddEdge={onAddEdge}
               registry={registry}
               onParamChange={onParamChange}
             />

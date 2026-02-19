@@ -37,6 +37,8 @@ export default function PipelineCanvas({
   edges,
   onNodesChange,
   onEdgesChange,
+  onAddNode,
+  onAddEdge,
   registry,
   onParamChange,
 }) {
@@ -115,7 +117,7 @@ export default function PipelineCanvas({
   const onConnect = useCallback(
     (params) => {
       if (!isValidConnection(params)) return
-      onEdgesChange((prev) =>
+      onAddEdge(
         addEdge(
           {
             ...params,
@@ -124,11 +126,11 @@ export default function PipelineCanvas({
             style: { stroke: '#475569', strokeWidth: 2 },
             markerEnd: { type: MarkerType.ArrowClosed, color: '#475569' },
           },
-          prev,
-        ),
+          [],
+        )[0],
       )
     },
-    [isValidConnection, onEdgesChange],
+    [isValidConnection, onAddEdge],
   )
 
   // Drag-from-palette → drop onto canvas
@@ -160,9 +162,9 @@ export default function PipelineCanvas({
         newNode.data.params = defaults
       }
 
-      onNodesChange((prev) => [...prev, newNode])
+      onAddNode(newNode)
     },
-    [screenToFlowPosition, registryMap, onNodesChange],
+    [screenToFlowPosition, registryMap, onAddNode],
   )
 
   const onDragOver = useCallback((event) => {
